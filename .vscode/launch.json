@@ -1,0 +1,58 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Your own server",
+            "request": "launch",
+            "type": "al",
+            "target": "OnPrem",
+            "environmentType": "OnPrem",
+            "server": "http://172.16.2.3",
+            "serverInstance": "POS",
+            "port": 7049,
+            "authentication": "Windows",
+            "startupObjectId": 22,
+            "startupObjectType": "Page",
+            "breakOnError": true,
+            "launchBrowser": false,
+            "enableLongRunningSqlStatements": true,
+            "enableSqlInformationDebugger": true,
+            "tenant": "default"
+        },
+        {
+            "name": "Test server",
+            "request": "launch",
+            "type": "al",
+            "target": "OnPrem",
+            "environmentType": "OnPrem",
+            "server": "http://192.168.10.17",
+            "serverInstance": "BCPOS2",
+            "port": 6049,
+            "authentication": "Windows",
+            "startupObjectId": 22,
+            "startupObjectType": "Page",
+            "breakOnError": true,
+            "launchBrowser": false,
+            "enableLongRunningSqlStatements": true,
+            "enableSqlInformationDebugger": true,
+            "tenant": "default"
+        },
+        {
+            "name": "Your own server",
+            "request": "launch",
+            "type": "al",
+            "environmentType": "OnPrem",
+            "server": "http://172.16.1.114/",
+            "serverInstance": "BCBackup",
+            "port": 7049,
+            "authentication": "Windows",
+            "startupObjectId": 22,
+            "startupObjectType": "Page",
+            "breakOnError": true,
+            "launchBrowser": false,
+            "enableLongRunningSqlStatements": true,
+            "enableSqlInformationDebugger": true,
+            "tenant": "default",
+        }
+    ]
+}

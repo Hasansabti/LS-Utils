@@ -80,6 +80,92 @@ codeunit 50004 AlamerPOSUtils
         POSFunctions: Codeunit "POS Functions";
         HospitalityType: Record "Hospitality Type";
 
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterInsertPaymentLine', '', true, true)]
+    procedure OnAfterInsertPaymentLine(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
+    var
+        PTTrans: Codeunit "POS Transaction";
+        MenuLine: Record "POS Menu Line";
+
+    begin
+        MenuLine.SetFilter("Menu ID", '#CANCEL');
+        MenuLine.SetFilter("Profile ID", '##DEFAULT');
+        MenuLine.SetFilter("Key No.", '1');
+        if (MenuLine.Find('-'))
+        then begin
+            PTrans.RunCommand(MenuLine);
+        end;
+
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterChangeQty', '', true, true)]
+    procedure OnAfterChangeQty(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
+    var
+        PTTrans: Codeunit "POS Transaction";
+        MenuLine: Record "POS Menu Line";
+
+    begin
+
+
+        MenuLine.SetFilter("Menu ID", '#CANCEL');
+        MenuLine.SetFilter("Profile ID", '##DEFAULT');
+        MenuLine.SetFilter("Key No.", '1');
+        if (MenuLine.Find('-'))
+        then begin
+            PTrans.RunCommand(MenuLine);
+        end;
+
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnBeforeGetContext', '', true, true)]
+    procedure OnAfterGetContext(var POSTransaction: Record "POS Transaction"; var CurrInput: Text; var POSTransLine: Record "POS Trans. Line")
+    var
+        CContact: Record "Contact";
+        Terminal: Record "POS Terminal";
+        CusName: Text;
+        CusPhone: Text;
+        EPOSCtrl: Codeunit "EPOS Control Interface";
+    begin
+
+        //  Message(Command);
+        // Terminal.Reset();
+        //Terminal.Get(POSTransaction."POS Terminal No.");
+
+        /*
+        if EPOSCtrl.loaded and (POSTransaction."Transaction Type" = POSTransaction."Transaction Type"::Sales) and (Terminal.Get(POSTransaction."POS Terminal No.")) then
+            if (Terminal."Interface Profile" = '#BK-OVEN') and (POSTransaction."Sell-to Contact No." = '') then begin
+
+                CusName := EPOSCtrl.GetInputText('#CUST_NAME');
+                CusPhone := EPOSCtrl.GetInputText('#CUST_PHONE');
+
+
+                if (StrLen(CusName) > 0)
+                           then begin
+
+                    CContact.Reset();
+                    CContact.SetFilter("No.", CusPhone);
+                    if (CContact.Find('-'))
+                    then begin
+                        CContact.Name := CusName;
+                        CContact."Phone No." := CusPhone;
+                        CContact.Modify();
+                    end else begin
+                        CContact.Init();
+                        CContact."No." := CusPhone;
+                        CContact.Name := CusName;
+                        CContact."Phone No." := CusPhone;
+                        CContact.Insert();
+                    end;
+                    POSTransaction."Sell-to Contact No." := CContact."No.";
+                    POSTransaction.Modify();
+                    //  EPOSCtrl.SetInputText('#CUST_NAME', '');
+                    //  EPOSCtrl.SetInputText('#CUST_PHONE', '');
+                end;
+            end;
+
+
+
+*/
+    end;
 
     /// <summary>
     /// OnBeforeGetContext.
@@ -89,55 +175,47 @@ codeunit 50004 AlamerPOSUtils
     /// <param name="CurrInput">VAR Text.</param>
     /// <param name="POSTransaction">VAR Record "POS Transaction".</param>
     /// <param name="POSTransLine">VAR Record "POS Trans. Line".</param>
+
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterSuspend', '', true, true)]
-    procedure OnBeforeGetContext(var POSTransaction: Record "POS Transaction")
+    procedure OnAfterSuspend(var POSTransaction: Record "POS Transaction")
     var
         EPOSCtrl: Codeunit "EPOS Control Interface";
         CusName: Text;
         CusPhone: Text;
         CContact: Record "Contact";
-
-
-
+        Terminal: Record "POS Terminal";
 
     begin
-        // POSView.GetContext(lContext);
-        CusName := EPOSCtrl.GetInputText('#CUST_NAME');
-        CusPhone := EPOSCtrl.GetInputText('#CUST_PHONE');
-        if (StrLen(CusName) > 0)
-        then begin
 
+        Terminal.Get(POSTransaction."POS Terminal No.");
+        if (Terminal."Interface Profile" = '#BK-OVEN') then begin
 
-
-
-            CContact.Reset();
-            CContact.SetFilter("No.", CusPhone);
-            if (CContact.Find('-'))
+            // POSView.GetContext(lContext);
+            CusName := EPOSCtrl.GetInputText('#CUST_NAME');
+            CusPhone := EPOSCtrl.GetInputText('#CUST_PHONE');
+            if (StrLen(CusName) > 0)
             then begin
-                CContact.Name := CusName;
-                CContact."Phone No." := CusPhone;
-                CContact.Modify();
 
-
-            end else begin
-                CContact.Init();
-                CContact."No." := CusPhone;
-                CContact.Name := CusName;
-                CContact."Phone No." := CusPhone;
-                CContact.Insert();
-
-
+                CContact.Reset();
+                CContact.SetFilter("No.", CusPhone);
+                if (CContact.Find('-'))
+                then begin
+                    CContact.Name := CusName;
+                    CContact."Phone No." := CusPhone;
+                    CContact.Modify();
+                end else begin
+                    CContact.Init();
+                    CContact."No." := CusPhone;
+                    CContact.Name := CusName;
+                    CContact."Phone No." := CusPhone;
+                    CContact.Insert();
+                end;
+                POSTransaction."Sell-to Contact No." := CContact."No.";
+                POSTransaction.Modify();
+                EPOSCtrl.SetInputText('#CUST_NAME', '');
+                EPOSCtrl.SetInputText('#CUST_PHONE', '');
             end;
-            POSTransaction."Sell-to Contact No." := CContact."No.";
-            POSTransaction.Modify();
-            EPOSCtrl.SetInputText('#CUST_NAME', '');
-            EPOSCtrl.SetInputText('#CUST_PHONE', '');
         end;
-
-
-
-
-
         // addCommand('CUSTOMER_INFO');
 
     end;
@@ -149,22 +227,28 @@ codeunit 50004 AlamerPOSUtils
         CusName: Text;
         CusPhone: Text;
         CContact: Record "Contact";
-    begin
-        if not (POSTransaction."Sell-to Contact No." = '')
-        then begin
-            CContact.Reset();
-            CContact.SetFilter("No.", CusPhone);
-            if (CContact.Find('-'))
-            then begin
-                EPOSCtrl.SetInputText('#CUST_NAME', CContact.Name);
-                EPOSCtrl.SetInputText('#CUST_PHONE', CContact."Phone No.");
-            end else begin
+        Terminal: Record "POS Terminal";
 
-                EPOSCtrl.SetInputText('#CUST_NAME', '');
-                EPOSCtrl.SetInputText('#CUST_PHONE', '');
+
+    begin
+        Terminal.Get(POSTransaction."POS Terminal No.");
+        if (Terminal."Interface Profile" = '#BK-OVEN') then begin
+
+            if not (POSTransaction."Sell-to Contact No." = '')
+            then begin
+                CContact.Reset();
+                CContact.SetFilter("No.", POSTransaction."Sell-to Contact No.");
+                if (CContact.Find('-'))
+                then begin
+                    EPOSCtrl.SetInputText('#CUST_NAME', CContact.Name);
+                    EPOSCtrl.SetInputText('#CUST_PHONE', CContact."Phone No.");
+                end else begin
+
+                    EPOSCtrl.SetInputText('#CUST_NAME', '');
+                    EPOSCtrl.SetInputText('#CUST_PHONE', '');
+                end;
             end;
         end;
-
     end;
 
 
@@ -172,9 +256,17 @@ codeunit 50004 AlamerPOSUtils
     procedure OnAfterStartNewTransaction(var POSTransaction: Record "POS Transaction")
     var
         EPOSCtrl: Codeunit "EPOS Control Interface";
+        Terminal: Record "POS Terminal";
     begin
-        EPOSCtrl.SetInputText('#CUST_NAME', '');
-        EPOSCtrl.SetInputText('#CUST_PHONE', '');
+        // if(EPOSCtrl.getin)
+        Terminal.Get(POSTransaction."POS Terminal No.");
+
+        if (Terminal."Interface Profile" = '#BK-OVEN') then begin
+
+
+            EPOSCtrl.SetInputText('#CUST_NAME', '');
+            EPOSCtrl.SetInputText('#CUST_PHONE', '');
+        end;
 
     end;
 
@@ -314,72 +406,82 @@ codeunit 50004 AlamerPOSUtils
 
     end;
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintNegAdjSlip', '', true, true)]
-    procedure OnBeforePrintNegAdjSlip(VAR Transaction: Record "Transaction Header"; VAR PrintBuffer: Record "POS Print Buffer"; VAR PrintBufferIndex: Integer; VAR LinesPrinted: Integer; VAR DSTR1: Text[100]; VAR Proceed: Boolean; sender: Codeunit "POS Print Utility"; GenPosFunc: Record "POS Functionality Profile"; bSecondPrintActive: Boolean)
-
-    var
-
-    begin
-        //   Proceed := False;
-
-
-        //  PrintNegAdjSlip(sender, Transaction, GenPosFunc, PrintBuffer, False, '', 10, 10, False, PrintBufferIndex);
-
-
-    end;
-
-
 
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnBeforeAskForCard', '', true, true)]
     procedure OnBeforeAskForCard(var CurrInput: Text; var PaymentAmount: Decimal; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line"; var Proceed: Boolean)
     var
         POSEFT: Codeunit "POS EFT Utility";
+        // PEFT2: Page "EPOS EFT Dialog";
         POSTransactionCU: Codeunit "POS Transaction";
+        POSEFTRecord: Record "POS EFT";
         POSTerminal: Record "POS Terminal";
         POSCardEntry: Record "POS Card Entry";
         CardEntryNo: Integer;
         Description: Text[200];
         POSHardwareprofile: Record "POS Hardware Profile";
+        DeviceID: Code[20];
     begin
         POSTerminal.Get(POSTransaction."POS Terminal No.");
-        POSHardwareprofile.Get(POSTerminal."Hardware Profile");
+        if not (POSTerminal."Hardware Profile" = '') then begin
 
 
-        if (POSHardwareprofile."HWST Sync") then begin
+            POSHardwareprofile.Get(POSTerminal."Hardware Profile");
+
+
+            if (POSHardwareprofile."HWST Sync") and (POSTerminal."EFT Authentication Type" = POSTerminal."EFT Authentication Type"::WIFI) then begin
 
 
 
 
-            Proceed := false;
-            //  Message('ask for card');
-            POSEFT.ClearEFT();
+                Proceed := false;
+                //  Message('ask for card');
+                POSEFT.ClearEFT();
 
 
-            POSEFT.InitEFTServer();
-            Description := '';
-            //  POSEFT.SeekAuth();
-            POSEFT.SetAmount(PaymentAmount);
-            POSEFT.ProcessPurchase();
-            POSEFT.InitLogEntry(POSTransaction."Receipt No.");
-            CardEntryNo := POSEFT.InsertLogEntry();
-            POSCardEntry.Reset();
-            POSCardEntry.SetFilter("Store No.", POSTransaction."Store No.");
-            POSCardEntry.SetFilter("POS Terminal No.", POSTransaction."POS Terminal No.");
-            POSCardEntry.SetFilter("Entry No.", format(CardEntryNo));
+                POSEFT.InitEFTServer();
+                Description := '';
+                //  POSEFT.SeekAuth();
+                POSEFT.SetAmount(PaymentAmount);
+                POSEFT.SetTransType(POSCardEntry."Transaction Type"::Sale);
+                POSEFT.PollStatus(Description);
 
-            //Message(FORMAT(CardEntryNo));
-            //POSTransactionCU.ValidateCardExtra();
-            if (POSCardEntry.Find('-')) then begin
-                if (POSCardEntry."Authorisation Ok") then begin
-                    POSTransactionCU.InsertPaymentLine();
+                /*
+                if (POSHardwareprofile.GetDevice(6, '', '', 0, DeviceID))
+then
+                    if (POSEFTRecord.Get(DeviceID)) then;
 
+                    PEFT2.Purchase(POSEFT.get);
+                POSEFT.PollStatus(Description);
+                
+          
+                Clear(PEFT2);
+                PEFT2.SetDemoMode(POSHardwareprofile.EFT = POSHardwareprofile.EFT::None);
+
+*/
+
+
+                POSEFT.InitLogEntry(POSTransaction."Receipt No.");
+                //POSEFT.SetTenderType('3');
+                CardEntryNo := POSEFT.InsertLogEntry();
+                POSCardEntry.Reset();
+                POSCardEntry.SetFilter("Store No.", POSTransaction."Store No.");
+                POSCardEntry.SetFilter("POS Terminal No.", POSTransaction."POS Terminal No.");
+                POSCardEntry.SetFilter("Entry No.", format(CardEntryNo));
+                //Message(FORMAT(CardEntryNo));
+                POSTransactionCU.InsertCardPaymentLine(CardEntryNo);
+                if (POSCardEntry.Find('-')) then begin
+                    if (POSCardEntry."Authorisation Ok") then begin
+                        POSCardEntry."Auth.code" := POSCardEntry."EFT Batch No.";
+                        POSCardEntry.Modify();
+                        POSTransactionCU.InsertPaymentLine();
+
+                    end;
                 end;
+                POSEFT.CloseEFTServer();
+
             end;
-            POSEFT.CloseEFTServer();
-
         end;
-
 
     end;
 
@@ -608,7 +710,7 @@ codeunit 50004 AlamerPOSUtils
 
             //  sender.PrintLogo(2);
 
-            sender.PrintBitmap(2, 'C:\Logo\Bakery.png', 1);
+            sender.PrintBitmap(2, 'C:\Logo\Logo.BMP', 1);
             // sender.PrintHeader(Transaction, FALSE, 2);
 
             DSTR1 := '#C##################';
@@ -808,8 +910,15 @@ codeunit 50004 AlamerPOSUtils
 
 
 
+                if (POSHardwareProfile."HWST Sync") then begin
 
-                pQRPath := AlamerUtils.getAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+
+                    pQRPath := AlamerUtils.getAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                end else begin
+
+                    pQRPath := AlamerUtils.getClientAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100);
+
+                end;
                 sender.PrintBitmap(2, pQRPath, 1);
                 // Message(pQRPath);
 
@@ -847,8 +956,14 @@ codeunit 50004 AlamerPOSUtils
             if not (Transaction."Sale Is Return Sale")
             then begin
                 grossamnt := -Transaction."Gross Amount";
+                if (POSHardwareProfile."HWST Sync") then begin
 
-                ZlQRPath := AlamerUtils.getZakatQr(ZQRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
+                    ZlQRPath := AlamerUtils.getZakatQr(ZQRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
+
+                end else begin
+                    ZlQRPath := AlamerUtils.getClientZakatQr(ZQRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
+
+                end;
                 // ZlQRPath := FileMgt.BLOBExport(ZQRCodeRec, 'QrBmpExp.bmp', FALSE);
                 //  Message(ZlQRPath);
 
@@ -1398,6 +1513,7 @@ codeunit 50004 AlamerPOSUtils
         Currency: Record Currency;
         PerDiscOffArr: array[10] of Code[23];
         PerDiscOffAmtArr: array[10] of Decimal;
+        VendorTotal: Decimal;
 
     begin
 

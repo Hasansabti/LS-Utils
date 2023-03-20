@@ -222,14 +222,15 @@ codeunit 50004 AlamerPOSUtils
 
         TempPOSTransline.SetFilter("Receipt No.", POSSession.GetReceiptNo());
 
-        PrintSuspendSlip(POSTransaction, 0, TempPOSTransline, Globals, sender, RetailHelper, GenPosFunc);
+        PrintSuspendSlip(Transaction, POSTransaction, 0, TempPOSTransline, Globals, sender, RetailHelper, GenPosFunc);
         Proceed := false;
 
 
     end;
 
 
-    PROCEDURE PrintSuspendSlip(POSTrans: Record "POS Transaction";
+    PROCEDURE PrintSuspendSlip(Transaction: Record 99001472;
+POSTrans: Record "POS Transaction";
     GrAmount: Decimal;
     VAR tmpPosItemTransLines: Record 99008981 temporary;
     Globals: Codeunit "POS Session";
@@ -240,7 +241,6 @@ codeunit 50004 AlamerPOSUtils
         POSTerminal: Record 99001471;
         SalesType: Record 10001439;
         DSTR1: Text[50];
-        Transaction: Record 99001472;
         Customer: Record 18;
         ItemTranslate: Record 30;
         bcWidth: Integer;

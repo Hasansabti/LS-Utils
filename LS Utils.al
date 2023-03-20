@@ -80,51 +80,88 @@ codeunit 50004 AlamerPOSUtils
         POSFunctions: Codeunit "POS Functions";
         HospitalityType: Record "Hospitality Type";
 
+
+
+
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterInsertPaymentLine', '', true, true)]
     procedure OnAfterInsertPaymentLine(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
     var
         PTTrans: Codeunit "POS Transaction";
         MenuLine: Record "POS Menu Line";
+        POSHtml: Codeunit "EPOS Control Interface HTML";
+        POSSession: Codeunit "POS Session";
 
     begin
-        MenuLine.SetFilter("Menu ID", '#CANCEL');
-        MenuLine.SetFilter("Profile ID", '##DEFAULT');
-        MenuLine.SetFilter("Key No.", '1');
-        if (MenuLine.Find('-'))
-        then begin
-            PTrans.RunCommand(MenuLine);
+
+        CurrInput := '';
+        PTrans.SetInputPrompt(CurrInput);
+        PTrans.SetCurrInput(CurrInput);
+        if (POSSession.IsWebClient()) then begin
+            POSHtml.AddJavaScript(
+        'document.querySelector("input[data-ls-id=''#CURRINPUT'']").value = '''''
+          );
         end;
 
+
+
     end;
+
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterInitNewLine', '', true, true)]
+    procedure OnBeforeRunCommand(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
+    var
+    begin
+        //if (Command = 'TEXT_LINKED') then begin
+        //    Message(FORMAT(POSTransLine."Restaurant Menu Type Code"));
+        //  POSTransLine."Kitchen Routing" := POSTransLine."Kitchen Routing"::"Follow Parent";
+        //  POSTransLine.Modify();
+
+    end;
+
+
+
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterChangeQty', '', true, true)]
     procedure OnAfterChangeQty(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
     var
         PTTrans: Codeunit "POS Transaction";
         MenuLine: Record "POS Menu Line";
+        POSHtml: Codeunit "EPOS Control Interface HTML";
+        POSSession: Codeunit "POS Session";
 
     begin
 
 
-        MenuLine.SetFilter("Menu ID", '#CANCEL');
-        MenuLine.SetFilter("Profile ID", '##DEFAULT');
-        MenuLine.SetFilter("Key No.", '1');
-        if (MenuLine.Find('-'))
-        then begin
-            PTrans.RunCommand(MenuLine);
+        CurrInput := '';
+        PTrans.SetInputPrompt(CurrInput);
+        PTrans.SetCurrInput(CurrInput);
+        if (POSSession.IsWebClient()) then begin
+            POSHtml.AddJavaScript(
+        'document.querySelector("input[data-ls-id=''#CURRINPUT'']").value = '''''
+          );
         end;
-
     end;
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnBeforeGetContext', '', true, true)]
-    procedure OnAfterGetContext(var POSTransaction: Record "POS Transaction"; var CurrInput: Text; var POSTransLine: Record "POS Trans. Line")
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterValidateCustomerTender', '', true, true)]
+    procedure OnAfterGetContext(var CurrInput: Text; var CustomerOrCardNo: Code[20]; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
     var
         CContact: Record "Contact";
         Terminal: Record "POS Terminal";
         CusName: Text;
         CusPhone: Text;
         EPOSCtrl: Codeunit "EPOS Control Interface";
+        POSHtml: Codeunit "EPOS Control Interface HTML";
+        POSSession: Codeunit "POS Session";
     begin
+
+        if (CustomerOrCardNo = 'CU-120') then begin
+            if (POSSession.IsWebClient()) then begin
+                POSHtml.AddJavaScript(
+            'let newWindow = open(''https://pos.manafithsys.com/'', ''https://pos.manafithsys.com/'', ''width=900,height=900''); newWindow.focus();'
+              );
+            end
+        end;
+
 
         //  Message(Command);
         // Terminal.Reset();
@@ -166,6 +203,235 @@ codeunit 50004 AlamerPOSUtils
 
 */
     end;
+
+
+
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintSuspendSlip', '', true, true)]
+    procedure OnBeforePrintSuspendSlip(var Transaction: Record "Transaction Header"; Globals: Codeunit "POS Session"; var Proceed: Boolean; sender: Codeunit "POS Print Utility"; GenPosFunc: Record "POS Functionality Profile"; RetailHelper: Codeunit "LS Retail  helper")
+    var
+        POSSession: Codeunit "POS Transaction";
+        POSTransaction: Record "POS Transaction";
+        TempPOSTransline: Record "POS Trans. Line" temporary;
+
+
+
+    begin
+        POSTransaction.SetFilter("Receipt No.", POSSession.GetReceiptNo());
+        POSTransaction.Find('-');
+
+        TempPOSTransline.SetFilter("Receipt No.", POSSession.GetReceiptNo());
+
+        PrintSuspendSlip(POSTransaction, 0, TempPOSTransline, Globals, sender, RetailHelper, GenPosFunc);
+        Proceed := false;
+
+
+    end;
+
+
+    PROCEDURE PrintSuspendSlip(POSTrans: Record "POS Transaction";
+    GrAmount: Decimal;
+    VAR tmpPosItemTransLines: Record 99008981 temporary;
+    Globals: Codeunit "POS Session";
+    sender: Codeunit "POS Print Utility";
+    RetailHelper: Codeunit "LS Retail  helper";
+    GenPosFunc: Record "POS Functionality Profile"): Boolean;
+    VAR
+        POSTerminal: Record 99001471;
+        SalesType: Record 10001439;
+        DSTR1: Text[50];
+        Transaction: Record 99001472;
+        Customer: Record 18;
+        ItemTranslate: Record 30;
+        bcWidth: Integer;
+        bcHeight: Integer;
+        bc: Text;
+        POSTransInfoEntry: Record 99008982;
+        POSTransSusp: Record 99008980;
+        CreatedPOSTerminal: Record 99001471;
+        ReceiptBarcodeID: Integer;
+        "-------EDM-------": Integer;
+        QRCodeRec: Record 99008535;
+        FileMgt: Codeunit 419;
+        Store: Record Store;
+        POSHardwareProfile: Record "POS Hardware Profile";
+        ServerQRPath: Text;
+        pQRPath: Text;
+        InStr: InStream;
+        AlamerUtils: Codeunit InvoiceUtils;
+
+    BEGIN
+        //PrintSuspendSlip
+        //LS-12346-
+
+        //LS-12346+
+        IF NOT POSTerminal.GET(Globals.TerminalNo) THEN
+            EXIT(TRUE);
+
+
+        POSTerminal.GET(Transaction."POS Terminal No.");
+        Store.Get(Transaction."Store No.");
+        if (POSTerminal."Hardware Profile" = '') then begin
+            POSHardwareProfile.Get(Store."Hardware Profile");
+        end else begin
+            POSHardwareProfile.Get(POSTerminal."Hardware Profile");
+        end;
+
+        //EDMABodon ++
+        IF NOT POSTerminal."Print Suspended Trans. Receipt" THEN
+            EXIT(TRUE);
+        //EDMABodon --
+
+        IF NOT sender.OpenReceiptPrinter(2, 'SUSPEND', '', 0, POSTrans."Receipt No.") THEN
+            EXIT(FALSE);
+
+        CLEAR(Transaction);
+        Transaction."POS Terminal No." := Globals.TerminalNo;
+        Transaction.Date := POSTrans."Trans. Date";
+        Transaction.Time := POSTrans."Trans Time";
+        Transaction."Receipt No." := tmpPosItemTransLines."Receipt No.";
+        Transaction."Staff ID" := POSTrans."Staff ID";
+        IF NOT POSTransSusp.GET(Transaction."Receipt No.") THEN
+            CLEAR(POSTransSusp);
+        sender.PrintLogo(2);
+        sender.PrintHeader(Transaction, FALSE, 2);
+        sender.PrintSubHeader(Transaction, 2, Transaction.Date, Transaction.Time);
+
+        //EDMABODON_Sayed_20200819: PrintQR Code ++
+        POSTerminal.GET(Transaction."POS Terminal No.");
+        IF POSTerminal."Receipt Barcode" THEN BEGIN
+
+            if (POSHardwareProfile."HWST Sync") then begin
+
+
+                pQRPath := AlamerUtils.getAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+            end else begin
+
+                pQRPath := AlamerUtils.getClientAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100);
+
+            end;
+
+            sender.PrintBitmap(2, pQRPath, 1);
+
+
+            sender.PrintSeperator(2);
+        END;
+        //EDMABODON_Sayed_20200819: PrintQR Code ++
+
+        //EDM_MSayed_20210805
+        DSTR1 := '#C##################';
+        Value[1] := POSTerminal."No.";
+        NodeName[1] := 'Terminal No.';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), TRUE, TRUE, TRUE, FALSE));
+        sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, TRUE, TRUE, TRUE, FALSE, 2);
+        sender.PrintSeperator(2);
+        sender.PrintLine(2, '');
+        //EDM_MSayed_20210805
+
+        DSTR1 := '#C##################';
+        IF (POSTrans."Sales Type" <> '') AND SalesType.GET(POSTrans."Sales Type") AND (SalesType.Description <> '') THEN
+            Value[1] := SalesType.Description
+        ELSE
+            Value[1] := 'SUSPENDED';
+        NodeName[1] := 'Description';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), TRUE, TRUE, TRUE, FALSE));
+        sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, TRUE, TRUE, TRUE, FALSE, 2);
+        sender.PrintSeperator(2);
+        sender.PrintLine(2, '');
+
+        tmpPosItemTransLines.SETRANGE("Entry Type", tmpPosItemTransLines."Entry Type"::Item);
+        tmpPosItemTransLines.SETRANGE("Entry Status", tmpPosItemTransLines."Entry Status"::" ");
+        IF tmpPosItemTransLines.FIND('-') THEN BEGIN
+            DSTR1 := '#L###################### #L#############';
+            Value[1] := 'Description';
+            Value[2] := 'Quantity';
+            sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+            sender.PrintSeperator(2);
+            REPEAT
+                IF tmpPosItemTransLines."Unit of Measure" = '' THEN
+                    tmpPosItemTransLines."Unit of Measure" := 'pcs';
+                Value[1] := RetailHelper.Trim(tmpPosItemTransLines.Description, 50);
+
+                IF Customer.GET(POSTrans."Customer No.") THEN
+                    IF Customer."Language Code" <> '' THEN
+                        IF ItemTranslate.GET(tmpPosItemTransLines.Number,
+                                             tmpPosItemTransLines."Variant Code",
+                                             Customer."Language Code") THEN
+                            IF ItemTranslate.Description <> '' THEN
+                                Value[1] := ItemTranslate.Description;
+
+                Value[2] := POSFunctions.FormatQty(tmpPosItemTransLines.Quantity) + ' ' + LOWERCASE(tmpPosItemTransLines."Unit of Measure");
+                sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+                Value[2] := Value[1];
+                Value[1] := tmpPosItemTransLines.Number;
+                NodeName[1] := 'Item No.';
+                NodeName[2] := 'Item Description';
+                Value[3] := tmpPosItemTransLines."Unit of Measure";
+                NodeName[3] := 'UOM ID';
+                Value[4] := POSFunctions.FormatQty(tmpPosItemTransLines.Quantity);
+                NodeName[4] := 'Quantity';
+                sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+                //EDMABODON++
+                IF GenPosFunc."Print Free Text on Receipt" THEN;
+                sender.PrintFreeTextLinesFromPOSTrans(tmpPosItemTransLines, 2, FALSE);
+            //EDMABODON--
+            UNTIL tmpPosItemTransLines.NEXT = 0;
+            sender.PrintSeperator(2);
+        END;
+
+        DSTR1 := '#L################# #R###############   ';
+        Value[1] := 'Total ';
+        NodeName[1] := 'Total Text';
+        Value[2] := POSFunctions.FormatAmount(GrAmount);
+        NodeName[2] := 'Total Amount';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+        sender.AddPrintLine(800, 2, NodeName, Value, DSTR1, FALSE, TRUE, FALSE, FALSE, 2);
+        sender.PrintSeperator(2);
+
+        tmpPosItemTransLines.SETRANGE("Entry Type", tmpPosItemTransLines."Entry Type"::IncomeExpense);
+        tmpPosItemTransLines.SETRANGE("Entry Status", tmpPosItemTransLines."Entry Status"::" ");
+        IF tmpPosItemTransLines.FIND('-') THEN BEGIN
+            DSTR1 := '#L#################### #N############';
+            REPEAT
+                GrAmount += tmpPosItemTransLines.Amount;
+                Value[1] := RetailHelper.Trim(tmpPosItemTransLines.Description, 50);
+                NodeName[1] := 'Total Text';
+                Value[2] := POSFunctions.FormatAmount(-tmpPosItemTransLines.Amount);
+                NodeName[2] := 'Total Amount';
+                sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+                sender.AddPrintLine(800, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+            UNTIL tmpPosItemTransLines.NEXT = 0;
+            POSTrans.CALCFIELDS("Gross Amount", "Income/Exp. Amount");
+            IF (POSTrans."Income/Exp. Amount" <> 0)
+            AND (POSTrans."Gross Amount" - GrAmount + POSTrans."Income/Exp. Amount" <> 0) THEN BEGIN
+                Value[1] := 'Prev. Prepayments';
+                NodeName[1] := 'Total Text';
+                Value[2] := POSFunctions.FormatAmount(GrAmount - POSTrans."Gross Amount" - POSTrans."Income/Exp. Amount");
+                NodeName[2] := 'Total Amount';
+                sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+                sender.AddPrintLine(800, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+                GrAmount := POSTrans."Gross Amount" + POSTrans."Income/Exp. Amount";
+            END;
+
+            sender.PrintSeperator(2);
+            sender.PrintLine(2, '');
+            DSTR1 := '#L################# #R###############   ';
+            Value[1] := 'Balance';
+            NodeName[1] := 'Total Text';
+            Value[2] := POSFunctions.FormatAmount(GrAmount);
+            NodeName[2] := 'Total Amount';
+            sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+            sender.AddPrintLine(800, 2, NodeName, Value, DSTR1, FALSE, TRUE, FALSE, FALSE, 2);
+            sender.PrintSeperator(2);
+        END;
+
+        //EDMABODON_20201228: Remove footer
+        //PrintFooter(Transaction,2);
+        //EDMABODON_20201228:
+        IF NOT sender.ClosePrinter(2) THEN
+            EXIT(FALSE);
+        EXIT(TRUE);
+    END;
 
     /// <summary>
     /// OnBeforeGetContext.
@@ -290,15 +556,28 @@ codeunit 50004 AlamerPOSUtils
         DelKOT: Text[30];
         KOTLineTEMP: Record 10012126 TEMPORARY;
         LastMenuTypeDescription: Text[30];
+        Item: Record Item;
 
         Tray: Integer;
     begin
         Tray := 2;
 
-        Value[1] := 'الكمية                            الوصف';
-        DSTR1 := '#L#######################################';
+        // Value[1] := 'الكمية                            الوصف';
+        // DSTR1 := '#L#######################################';
+        // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+        // sender.PrintSeperator(Tray);
+
+
+        DSTR1 := '#R##### #R##### #R#######################';
+        Value[3] := 'الوصف';
+        Value[2] := 'الوحدة';
+        Value[1] := 'الكمية';
         sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+        sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
         sender.PrintSeperator(Tray);
+
+
+
         KOTLineRouting.RESET;
         KOTLineRouting.SETCURRENTKEY("KOT No.", "Display Station ID", "Line Printed");
         KOTLineRouting.SETRANGE("KOT No.", KOTHeader."KOT No.");
@@ -333,21 +612,54 @@ codeunit 50004 AlamerPOSUtils
                     DSTR1 := '#L#######################################';
                     sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
                     LastMenuTypeDescription := KOTLineTEMP."Menu Type Description";
+
                 END;
                 //DSTR1 := '#L###################### #R####### #R###';
-                DSTR1 := '#L############################ #R#######';
-                Value[1] := '';
-                IF KOTLineTEMP."Line Printed" IN [KOTLineTEMP."Line Printed"::Yes, KOTLineTEMP."Line Printed"::"Reprint-Modifier"] THEN
-                    Value[1] := '*';
-                IF KOTLineTEMP.Voided THEN
-                    Value[1] += '(-)';
-                Value[1] += KOTLineTEMP.Description;
 
-                Value[2] := FORMAT(KOTLineTEMP.Quantity);
-                sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
-                NodeName[1] := 'Item Description';
-                NodeName[2] := 'Quantity';
-                sender.AddPrintLine(300, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+                //Arabic descripstion
+                DSTR1 := '#L############################ #R#######';
+                Value[3] := '';
+                IF KOTLineTEMP."Line Printed" IN [KOTLineTEMP."Line Printed"::Yes, KOTLineTEMP."Line Printed"::"Reprint-Modifier"] THEN
+                    Value[3] := '*';
+                IF KOTLineTEMP.Voided THEN
+                    Value[3] += '(-)';
+                Value[3] += KOTLineTEMP.Description.Replace('Piece', '').Replace('Small', '');
+
+                DSTR1 := '#R#######################################';
+                Value[1] := Value[3];
+                Value[2] := '';
+                Value[3] := '';
+                sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+
+
+                //English descripstion
+                if Item.Get(KOTLineTEMP."No.") then begin
+                    DSTR1 := '#R#######################################';
+                    Value[1] := Item.Description;
+                    Value[2] := '';
+                    Value[3] := '';
+                    sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                    sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+                end;
+                // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+                // NodeName[1] := 'Item Description';
+                // NodeName[2] := 'Quantity';
+                // sender.AddPrintLine(300, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+
+                //Unit and quantity
+                DSTR1 := '#R### #R##### #R#########################';
+                Value[3] := '';
+                Value[2] := FORMAT(KOTLineTEMP."Unit Of Measure");
+                Value[1] := FORMAT(KOTLineTEMP.Quantity);
+                sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+
+
+
+
+
+
 
                 KOTLineModifier.RESET;
                 KOTLineModifier.SETRANGE("KOT No.", KOTLineTEMP."KOT No.");
@@ -356,22 +668,28 @@ codeunit 50004 AlamerPOSUtils
                 IF KOTLineModifier.FINDSET(TRUE, FALSE) THEN
                     REPEAT
 
-                        Message(KOTLineModifier.Description);
-                        DSTR1 := '#L############################ #R#######';
-                        Value[1] := '';
+                        //  Message(KOTLineModifier.Description);
+                        DSTR1 := '#L####### #R############################';
+                        Value[2] := '';
                         IF KOTLineModifier."Line Printed" = KOTLineModifier."Line Printed"::Yes THEN
-                            Value[1] := '*';
+                            Value[2] := '*';
                         IF KOTLineModifier.Voided THEN
-                            Value[1] += '(-)';
-                        Value[1] += KOTLineModifier.Description;
+                            Value[2] += '(-)';
+
+
+                        Value[2] += KOTLineModifier.Description;
+
+                        if Item.Get(KOTLineModifier."Item Modifier No.") then begin
+                            Value[2] += ' - ' + Item.Description;
+                        end;
                         CASE KOTLineModifier."Line Info Type" OF
                             KOTLineModifier."Line Info Type"::Item:
-                                Value[2] := FORMAT(KOTLineModifier.Quantity);
+                                Value[1] := FORMAT(KOTLineModifier.Quantity);
                             KOTLineModifier."Line Info Type"::Text:
                                 IF KOTLineModifier.Quantity > 1 THEN
-                                    Value[2] := FORMAT(KOTLineModifier.Quantity)
+                                    Value[1] := FORMAT(KOTLineModifier.Quantity)
                                 ELSE
-                                    Value[2] := '';
+                                    Value[1] := '';
                         END;
                         sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
                         NodeName[1] := 'Item Description';
@@ -382,7 +700,9 @@ codeunit 50004 AlamerPOSUtils
                             KOTLineModifier.MODIFY;
                         END;
                     UNTIL KOTLineModifier.NEXT = 0;
+                sender.PrintSeperator(2);
             UNTIL KOTLineTEMP.NEXT = 0;
+
         COMMIT;
         Proceed := false;
     end;
@@ -469,11 +789,24 @@ then
                 POSCardEntry.SetFilter("POS Terminal No.", POSTransaction."POS Terminal No.");
                 POSCardEntry.SetFilter("Entry No.", format(CardEntryNo));
                 //Message(FORMAT(CardEntryNo));
-                POSTransactionCU.InsertCardPaymentLine(CardEntryNo);
+
+
                 if (POSCardEntry.Find('-')) then begin
+                    case POSCardEntry."Card Type" of
+                        '474E':
+                            POSCardEntry."Card Type" := 'GN';
+
+                    end;
+                    POSCardEntry.Modify();
+                    POSTransactionCU.InsertCardPaymentLine(CardEntryNo);
                     if (POSCardEntry."Authorisation Ok") then begin
+
+
+
+
                         POSCardEntry."Auth.code" := POSCardEntry."EFT Batch No.";
                         POSCardEntry.Modify();
+
                         POSTransactionCU.InsertPaymentLine();
 
                     end;
@@ -541,14 +874,10 @@ then
             CASE Transaction."Transaction Type" OF
                 Transaction."Transaction Type"::Sales, Transaction."Transaction Type"::Payment:
                     BEGIN
-
-
                         // Proceed := false;
                         //  posutils.printReceipt('', '');
 
-
                         //   PrintSalesSlip(sender, Transaction, GenPosFunc, PrintBuffer, bSecondPrintActive, QRPath, LineLen, InvLineLen, IsInvoice, PrintBufferIndex, Globals,UseTransactionStoreAndPOSForPrintHeader);
-
                         Phase := Phase + 1;
                         Phase := Phase + 1;
                         TransSalesEntry.SETRANGE("Store No.", Transaction."Store No.");
@@ -842,7 +1171,7 @@ then
         IF Transaction."Transaction No." = 0 THEN
             EXIT(TRUE);
         POSTerminal.GET(Transaction."POS Terminal No.");
-
+        Store.Get(Transaction."Store No.");
         if (POSTerminal."Hardware Profile" = '') then begin
             POSHardwareProfile.Get(Store."Hardware Profile");
         end else begin
@@ -952,7 +1281,7 @@ then
             gCompanyInfo.GET;
             CLEAR(exMsg);
 
-
+            printVendorTotals(Transaction, sender, 2);
             if not (Transaction."Sale Is Return Sale")
             then begin
                 grossamnt := -Transaction."Gross Amount";
@@ -974,6 +1303,9 @@ then
                 //EDM_HDeek_20211019: ZakatQR--
             end;
 
+
+
+
             IF Transaction."Post as Shipment" THEN
                 sender.PrintSignature('');
 
@@ -988,6 +1320,43 @@ then
             COMMIT;
             EXIT(TRUE);
         END;
+    end;
+
+    procedure printVendorTotals(Transaction: Record "Transaction Header"; var sender: Codeunit "POS Print Utility"; Tray: Integer)
+    var
+        SalesEntry: Record "Trans. Sales Entry";
+        Item: Record Item;
+        VendorTotal: Decimal;
+    begin
+
+        SalesEntry.SETRANGE("Store No.", Transaction."Store No.");
+        SalesEntry.SETRANGE("POS Terminal No.", Transaction."POS Terminal No.");
+        SalesEntry.SETRANGE("Transaction No.", Transaction."Transaction No.");
+
+        REPEAT
+            CLEAR(Item);
+            IF Item.GET(SalesEntry."Item No.") THEN;
+
+
+            if (Item."Vendor No." = '1073.4')
+                 then begin
+                VendorTotal += -(SalesEntry."Net Amount" + SalesEntry."VAT Amount" + SalesEntry."Discount Amount");
+            end;
+
+        UNTIL SalesEntry.NEXT = 0;
+
+
+        //Vendor
+        if (VendorTotal > 0) then begin
+            DSTR1 := '#R##### #R##############################';
+            Value[1] := POSFunctions.FormatAmount(VendorTotal);
+            Value[2] := 'Binzagr Co. (Unilever)';
+            sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+            // sender.PrintSeperator(Tray);
+
+        end;
+        //End Vendors
+
     end;
 
 
@@ -1513,7 +1882,7 @@ then
         Currency: Record Currency;
         PerDiscOffArr: array[10] of Code[23];
         PerDiscOffAmtArr: array[10] of Decimal;
-        VendorTotal: Decimal;
+
 
     begin
 
@@ -1692,6 +2061,8 @@ then
             REPEAT
                 CLEAR(Item);
                 IF Item.GET(SalesEntry."Item No.") THEN;
+
+
 
                 IF SalesEntry."Parent Line No." = 0 THEN BEGIN
                     ParentItem := Item;
@@ -1944,6 +2315,9 @@ then
                           ' ' + GenPosFunc."Multiple Items Symbol" + ' ';
                         Value[1] := Value[1] + POSFunctions.FormatPrice(RecipeBufferTEMP.Price);
                     END;
+
+
+
                     //DSTR1 := '#L####### #N##### #N############## #R##   ';
                     DSTR1 := '#L######## #N###### #N######## #R########';
                     Value[1] := POSFunctions.FormatAmount(-(RecipeBufferTEMP."Net Amount" + RecipeBufferTEMP."VAT Amount" + DiscountOnLine));
@@ -2355,10 +2729,13 @@ then
 
         END;
 
+
+
+
         gVATAmount := lVATAmount;
         IF VATPrinted THEN
             sender.PrintSeperator(Tray);
-
+        //Paid 
         DSTR1 := '#R##### #R######## #R######## #R########';
         CLEAR(Value);
         PaymEntry.SETCURRENTKEY("Store No.", "POS Terminal No.", "Transaction No.", "Line No.");
@@ -2385,6 +2762,13 @@ then
         sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
         // sender.PrintSeperator(Tray);
         sender.PrintSeperator(Tray);
+        //End paid
+
+
+
+
+
+
 
         DSTR1 := '#R##### #R######## #R######## #R########';
         Value[4] := 'المبلغ';
@@ -2484,6 +2868,12 @@ then
 
         IF discountSection THEN
             sender.PrintSeperator(Tray);
+
+
+
+
+
+
 
         IF Tray = 2 THEN
             sender.PrintCardSlipFromEFTEmbedded('E', Transaction); //LS-12379
@@ -2764,6 +3154,7 @@ then
             REPEAT
                 CLEAR(Item);
                 IF Item.GET(SalesEntry."Item No.") THEN;
+
 
                 IF SalesEntry."Parent Line No." = 0 THEN BEGIN
                     ParentItem := Item;
@@ -3360,6 +3751,9 @@ then
             UNTIL IncExpEntry.NEXT = 0;
             //  sender.PrintSeperator(Tray);
         END;
+
+
+
 
         IF POSTerminal."Print Number of Items" AND (TotalNumberOfItems <> 0) THEN BEGIN
             CLEAR(Value);

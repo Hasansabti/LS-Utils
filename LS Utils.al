@@ -81,7 +81,24 @@ codeunit 50004 AlamerPOSUtils
         HospitalityType: Record "Hospitality Type";
 
 
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnBeforeInsertPaymentLine', '', true, true)]
+    procedure OnBeforeInsertPaymentLine(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line"; var TenderTypeCode: Code[10])
+    var
+        customer: Record Customer;
+    begin
+        if (TenderTypeCode = '4') then begin
+            if (customer.get(POSTransaction."Customer No.")) then begin
+                if not (customer."Mobile Phone No." = '') then begin
+                    if (POSTransaction."Cust. ID Number" = '') then begin
 
+
+                    end;
+
+                end;
+            end;
+        end;
+
+    end;
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterInsertPaymentLine', '', true, true)]
     procedure OnAfterInsertPaymentLine(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
@@ -102,24 +119,83 @@ codeunit 50004 AlamerPOSUtils
           );
         end;
 
-
-
     end;
 
+    /*
+        [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterPostTransaction', '', true, true)]
+        procedure OnAfterPostTransaction(var POSTransaction: Record "POS Transaction")
+        var
+            TransactionLines: Record "Trans. Sales Entry";
+            Item: Record Item;
+            VendorAmount: Decimal;
+            VendorGiftAmount: Decimal;
+        begin
+            VendorAmount := 0;
+            TransactionLines.SetFilter("Receipt No.", POSTransaction."Receipt No.");
+            TransactionLines.Find('-');
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterInitNewLine', '', true, true)]
-    procedure OnBeforeRunCommand(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
-    var
-    begin
-        //if (Command = 'TEXT_LINKED') then begin
-        //    Message(FORMAT(POSTransLine."Restaurant Menu Type Code"));
-        //  POSTransLine."Kitchen Routing" := POSTransLine."Kitchen Routing"::"Follow Parent";
-        //  POSTransLine.Modify();
+            repeat
+                Clear(Item);
+                Item.Get(TransactionLines."Item No.");
+                if (Item."Vendor No." = '1073.4') and not (Item.Description.Contains('Lipton'))
+               then begin
+                    VendorAmount += (-TransactionLines."Net Amount");
+                end;
 
-    end;
-
+            until TransactionLines.Next() = 0;
 
 
+
+
+            if (VendorAmount > 0) then begin
+
+                if (VendorAmount >= 115) and (VendorAmount < 225) then
+                    VendorGiftAmount := 25
+                else
+                    if (VendorAmount >= 225) and (VendorAmount < 450) then
+                        VendorGiftAmount := 50
+                    else
+                        if (VendorAmount >= 450) and (VendorAmount < 600) then
+                            VendorGiftAmount := 150;
+                if (VendorAmount = 600) then
+                    VendorGiftAmount := 150;
+                if (VendorGiftAmount > 0) then begin
+                    createVendorGiftcard(POSTransaction, VendorGiftAmount);
+
+                end;
+            end;
+
+
+
+
+
+            //if (Command = 'TEXT_LINKED') then begin
+            //    Message(FORMAT(POSTransLine."Restaurant Menu Type Code"));
+            //  POSTransLine."Kitchen Routing" := POSTransLine."Kitchen Routing"::"Follow Parent";
+            //  POSTransLine.Modify();
+
+        end;
+
+    */
+
+    /*
+        [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnBeforePostTransaction', '', true, true)]
+        procedure OnBeforePostTransaction(var POSTransaction: Record "POS Transaction")
+        var
+            giftamount: Decimal;
+
+        begin
+          //  if (POSTransaction."Gross Amount" >= 100) then begin
+          //      giftamount := POSTransaction."Gross Amount" * 0.25;
+
+              //  createGenGiftcard(POSTransaction, giftamount, 'gifttest');
+         //   end;
+
+
+
+
+        end;
+    */
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Transaction Events", 'OnAfterChangeQty', '', true, true)]
     procedure OnAfterChangeQty(var CurrInput: Text; var POSTransaction: Record "POS Transaction"; var POSTransLine: Record "POS Trans. Line")
@@ -130,8 +206,6 @@ codeunit 50004 AlamerPOSUtils
         POSSession: Codeunit "POS Session";
 
     begin
-
-
         CurrInput := '';
         PTrans.SetInputPrompt(CurrInput);
         PTrans.SetCurrInput(CurrInput);
@@ -222,8 +296,11 @@ codeunit 50004 AlamerPOSUtils
 
         TempPOSTransline.SetFilter("Receipt No.", POSSession.GetReceiptNo());
 
-        PrintSuspendSlip(Transaction, POSTransaction, 0, TempPOSTransline, Globals, sender, RetailHelper, GenPosFunc);
+        //    PrintSuspendSlip(Transaction, POSTransaction, 0, TempPOSTransline, Globals, sender, RetailHelper, GenPosFunc);
         Proceed := false;
+
+
+        SendSalePOSTSSlack(POSTransaction, 'pos_suspend');
 
 
     end;
@@ -304,10 +381,10 @@ POSTrans: Record "POS Transaction";
             if (POSHardwareProfile."HWST Sync") then begin
 
 
-                pQRPath := AlamerUtils.getAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
             end else begin
 
-                pQRPath := AlamerUtils.getClientAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100);
+                pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
 
             end;
 
@@ -719,9 +796,14 @@ POSTrans: Record "POS Transaction";
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintSubHeader', '', true, true)]
     procedure OnBeforePrintSubHeader(TransactionHeader: Record "Transaction Header"; Tray: Integer; PrintBuffer: Record "POS Print Buffer"; PrintBufferIndex: Integer; LinesPrinted: Integer; var Proceed: Boolean; sender: Codeunit "POS Print Utility"; LineLen: Integer)
+    var
+        POSSESSION: Codeunit "POS Session";
+        POSHardWareProfile: Record "POS Hardware Profile";
     begin
+        POSHardWareProfile.Get(POSSESSION.HardwareProfileID());
+
         Proceed := false;
-        PrintSubHeader(TransactionHeader, Tray, TransactionHeader.Date, TransactionHeader.Time, sender, LineLen, LinesPrinted);
+        PrintSubHeader(TransactionHeader, Tray, TransactionHeader.Date, TransactionHeader.Time, sender, LineLen, LinesPrinted, POSHardWareProfile);
 
 
     end;
@@ -819,7 +901,18 @@ then
     end;
 
 
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintXZLines', '', true, true)]
+    procedure OnBeforePrintXZLines(Globals: Codeunit "POS Session"; sender: Codeunit "POS Print Utility")
+    begin
+        DSTR1 := '#L#############   #L####################';
+        Value[1] := 'Manager ID';
+        Value[2] := Globals.ManagerID;
+        Value[3] := '';
 
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+        sender.PrintSeperator(2);
+
+    end;
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintSlips', '', true, true)]
     procedure PrintTest(QRPath: Text[250]; bSecondPrintActive: Boolean; sender: Codeunit "POS Print Utility"; GenPosFunc: Record "POS Functionality Profile";
@@ -993,6 +1086,7 @@ then
                         PrintNegAdjSlip(sender, Transaction, GenPosFunc, PrintBuffer, False, '', 40, 40, False, PrintBufferIndex, Globals);
 
                     end;
+
             end;
         end;
 
@@ -1112,6 +1206,15 @@ then
                 sender.PrintSeperator(2);
             END;
 
+            DSTR1 := '#L############# #L########### #L########';
+            Value[1] := '';
+            Value[2] := '';
+            Value[3] := '';
+
+            sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+            sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+            sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+            sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
             sender.PrintFooter(Transaction, 2);
 
             IF NOT sender.ClosePrinter(2) THEN
@@ -1119,12 +1222,301 @@ then
 
         END;
 
+        // SendSlack(Transaction);
+
         Transaction.IncPrintedCounter(1);
         COMMIT;
 
 
 
     end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Post Utility", 'OnAfterPostTransaction', '', true, true)]
+    procedure OnAfterPostTransaction(var TransactionHeader_p: Record "Transaction Header")
+    begin
+        if (CompanyName = 'Al Amer Market') then begin
+            if (TransactionHeader_p."Transaction Type" = TransactionHeader_p."Transaction Type"::NegAdj) then begin
+                SendTSSlack(TransactionHeader_p, 'shop_use');
+            end else if (TransactionHeader_p."Transaction Type" = TransactionHeader_p."Transaction Type"::Sales) and (TransactionHeader_p."Sale Is Return Sale") then begin
+                SendSaleTSSlack(TransactionHeader_p, 'sale_returns');
+            end;
+        end;
+
+    end;
+
+    procedure SendPOSTSSlack(VAR Transaction: Record "POS Transaction")
+    var
+        TransLine: Record "Trans. Sales Entry";
+        Json: JsonObject;
+        JsonText: Text;
+        url: Text[200];
+        Client: HttpClient;
+        Content: HttpContent;
+        ResponseMessage: HttpResponseMessage;
+        RequestMessage: HttpRequestMessage;
+        header: HttpHeaders;
+        item: Record Item;
+        Qty: Decimal;
+    begin
+
+        url := 'https://hooks.slack.com/services/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';
+
+        //TransLine.SetFilter("Store No.", Transaction."Store No.");
+        // TransLine.SetFilter("POS Terminal No.", Transaction."Store No.");
+        TransLine.SetRange("Receipt No.", Transaction."Receipt No.");
+
+        if (TransLine.FindSet()) then begin
+            repeat
+                item.Get(TransLine."Item No.");
+
+                Json.Add('channel', 'test1');
+                Json.Add('username', Transaction."Store No." + ' ' + Transaction."Global Dimension 2 Code");
+                if not (TransLine."UOM Quantity" = 0) then
+                    Qty := TransLine."UOM Quantity"
+                else
+                    Qty := TransLine.Quantity;
+
+                Json.Add('text', TransLine."Item No." + ' ' + item.Description + ' ' + TransLine."Unit of Measure" + ' ' + FORMAT(Qty));
+
+                // Json.Add('icon_emoji', CustSetting."Slack Logo");
+                Json.WriteTo(JsonText);
+                Content.WriteFrom(JsonText);
+                Content.ReadAs(JsonText);
+                Content.GetHeaders(header);
+                header.Remove('Content-Type');
+                header.Add('Content-Type', 'application/json');
+                RequestMessage.Content(Content);
+
+                RequestMessage.SetRequestUri(Url);
+                RequestMessage.Method('POST');
+                client.Send(RequestMessage, ResponseMessage);
+                Clear(Json);
+                Clear(Content);
+                Clear(RequestMessage);
+            until TransLine.Next() = 0;
+
+
+        end;
+
+    end;
+
+    procedure SendTSSlack(VAR Transaction: Record "Transaction Header"; channel: Text)
+    var
+        TransLine: Record "Trans. Inventory Entry";
+        Store: Record Store;
+        Json: JsonObject;
+        Message: Text;
+        Message2: Text;
+        JsonText: Text;
+        DimenVal: Record "Dimension Value";
+        DepartmentName: Text;
+        Description: Text;
+        url: Text[200];
+        Client: HttpClient;
+        Content: HttpContent;
+        ResponseMessage: HttpResponseMessage;
+        RequestMessage: HttpRequestMessage;
+        header: HttpHeaders;
+        item: Record Item;
+        counter: Decimal;
+        Qty: Decimal;
+    begin
+        Clear(Json);
+        Clear(Content);
+        Clear(RequestMessage);
+        url := 'https://hooks.slack.com/services/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';
+
+        TransLine.SetFilter("Store No.", Transaction."Store No.");
+        TransLine.SetFilter("POS Terminal No.", Transaction."POS Terminal No.");
+        TransLine.SetRange("Transaction No.", Transaction."Transaction No.");
+
+        Store.Get(Transaction."Store No.");
+        DimenVal.SetFilter(Code, Transaction."Global Dimension 2 Code");
+        DimenVal.SetFilter("Dimension Code", 'DEPARTMENT');
+        if (DimenVal.FindFirst()) then
+            DepartmentName := DimenVal.Name
+        else
+            DepartmentName := Transaction."Global Dimension 2 Code";
+        Message := '';
+        counter := 0;
+
+        if (TransLine.FindSet()) then begin
+            repeat
+                if not (TransLine."UOM Quantity" = 0) then
+                    Qty := TransLine."UOM Quantity"
+                else
+                    Qty := TransLine.Quantity;
+                item.Get(TransLine."Item No.");
+                Description := item.Description;
+                Description := STRSUBSTNO(item.Description, 1, 50).PadRight(50, ' ');
+                Message2 := ('No.:' + TransLine."Item No." + '    Desc: ' + Description + '   UOM: ' + TransLine."Unit of Measure" + '    Qty: ' + FORMAT(Qty)) + ' ';
+                Message += Message2.PadRight(500);
+                if (counter mod 5 = 0) and not (counter = 0) then begin
+                    sendTextSlack(Store.Name + ' - ' + DepartmentName, Message, channel);
+                    Message := '';
+
+                end;
+                counter += 1;
+            until TransLine.Next() = 0;
+
+            sendTextSlack(Store.Name + ' - ' + DepartmentName, Message, channel);
+        end;
+    end;
+
+    procedure SendSaleTSSlack(VAR Transaction: Record "Transaction Header"; channel: Text)
+    var
+        TransLine: Record "Trans. Sales Entry";
+        Store: Record Store;
+        Json: JsonObject;
+        Message: Text;
+        Message2: Text;
+        JsonText: Text;
+        Description: Text;
+        url: Text[200];
+        Client: HttpClient;
+        Content: HttpContent;
+        ResponseMessage: HttpResponseMessage;
+        RequestMessage: HttpRequestMessage;
+        header: HttpHeaders;
+        item: Record Item;
+        counter: Decimal;
+        Qty: Decimal;
+    begin
+        Clear(Json);
+        Clear(Content);
+        Clear(RequestMessage);
+        url := 'https://hooks.slack.com/services/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';
+
+        TransLine.SetFilter("Store No.", Transaction."Store No.");
+        TransLine.SetFilter("POS Terminal No.", Transaction."POS Terminal No.");
+        TransLine.SetRange("Transaction No.", Transaction."Transaction No.");
+
+        Store.Get(Transaction."Store No.");
+
+        Message := '';
+        counter := 0;
+
+        if (TransLine.FindSet()) then begin
+            repeat
+                if not (TransLine."UOM Quantity" = 0) then
+                    Qty := TransLine."UOM Quantity"
+                else
+                    Qty := TransLine.Quantity;
+                item.Get(TransLine."Item No.");
+                Description := item.Description;
+                Description := STRSUBSTNO(item.Description, 1, 50).PadRight(50, ' ');
+                Message2 := ('No.:' + TransLine."Item No." + '    Desc: ' + Description + '   UOM: ' + TransLine."Unit of Measure" + '    Qty: ' + FORMAT(Qty)) + ' ' + '    Amount: ' + FORMAT(TransLine."Net Amount") + ' ';
+                Message += Message2.PadRight(500);
+                if (counter mod 5 = 0) and not (counter = 0) then begin
+                    sendTextSlack(Store.Name, Message, channel);
+                    Message := '';
+
+                end;
+                counter += 1;
+            until TransLine.Next() = 0;
+
+            sendTextSlack(Store.Name, Message, channel);
+        end;
+    end;
+
+
+    procedure SendSalePOSTSSlack(VAR Transaction: Record "POS Transaction"; channel: Text)
+    var
+        TransLine: Record "POS Trans. Line";
+        Store: Record Store;
+        Json: JsonObject;
+        Message: Text;
+        Message2: Text;
+        JsonText: Text;
+        Description: Text;
+        url: Text[200];
+        Client: HttpClient;
+        Content: HttpContent;
+        ResponseMessage: HttpResponseMessage;
+        RequestMessage: HttpRequestMessage;
+        header: HttpHeaders;
+        item: Record Item;
+        counter: Decimal;
+        Qty: Decimal;
+    begin
+        Clear(Json);
+        Clear(Content);
+        Clear(RequestMessage);
+        url := 'https://hooks.slack.com/services/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';
+
+        TransLine.SetFilter("Receipt No.", Transaction."Receipt No.");
+
+
+        Store.Get(Transaction."Store No.");
+
+        Message := '';
+        counter := 0;
+
+        if (TransLine.FindSet()) then begin
+            repeat
+
+                Qty := TransLine.Quantity;
+                if (item.Get(TransLine.Number)) then begin
+                    Description := item.Description;
+                    Description := STRSUBSTNO(item.Description, 1, 50).PadRight(50, ' ');
+                    Message2 := ('No.:' + TransLine.Number + '    Desc: ' + Description + '   UOM: ' + TransLine."Unit of Measure" + '    Qty: ' + FORMAT(Qty)) + ' ' + '    Amount: ' + FORMAT(TransLine."Net Amount") + ' ';
+                    Message += Message2.PadRight(500);
+                    if (counter mod 5 = 0) and not (counter = 0) then begin
+                        sendTextSlack(Store.Name + ' ' + Transaction."Receipt No." + ' ' + Transaction."Staff Receipt Name", Message, channel);
+                        Message := '';
+
+                    end;
+                    counter += 1;
+                end;
+
+            until TransLine.Next() = 0;
+
+            sendTextSlack(Store.Name + ' ' + Transaction."Receipt No." + ' ' + Transaction."Staff Receipt Name", Message, channel);
+        end;
+    end;
+
+    procedure sendTextSlack(title: Text; Message: Text; channel: Text)
+    var
+        TransLine: Record "Trans. Inventory Entry";
+        Store: Record Store;
+        Json: JsonObject;
+        Message2: Text;
+        JsonText: Text;
+        DimenVal: Record "Dimension Value";
+        DepartmentName: Text;
+        Description: Text;
+        url: Text[200];
+        Client: HttpClient;
+        Content: HttpContent;
+        ResponseMessage: HttpResponseMessage;
+        RequestMessage: HttpRequestMessage;
+        header: HttpHeaders;
+        item: Record Item;
+        counter: Integer;
+    begin
+        url := 'https://hooks.slack.com/services/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';
+        Json.Add('channel', channel);
+        Json.Add('username', title);
+        Json.Add('text', '```' + Message + '```');
+        // Prepare HTTP request
+        Json.WriteTo(JsonText);
+        Content.WriteFrom(JsonText);
+        Content.ReadAs(JsonText);
+        Content.GetHeaders(header);
+        header.Remove('Content-Type');
+        header.Add('Content-Type', 'application/json');
+        RequestMessage.Content(Content);
+
+        RequestMessage.SetRequestUri(Url);
+        RequestMessage.Method('POST');
+        client.Send(RequestMessage, ResponseMessage);
+
+        // Clear variables for next message
+        Clear(Json);
+        Clear(Content);
+        Clear(RequestMessage);
+    end;
+
 
     procedure PrintSalesSlip(sender: Codeunit "POS Print Utility"; VAR Transaction: Record "Transaction Header";
      GenPosFunc: Record "POS Functionality Profile"; PrintBuffer: Record "POS Print Buffer";
@@ -1150,6 +1542,8 @@ then
 
         exMsg: Text;
         grossamnt: Decimal;
+        Sched: Codeunit "Data Distribution v3.0";
+        SchedJob: Record "Scheduler Job Header";
 
 
 
@@ -1220,6 +1614,9 @@ then
             //  sender.PrintLogo(2);
             sender.PrintBitmap(2, POSHardwareProfile.Logo, 1);
 
+
+
+
             // PrintLogo(2, PrintBuffer, PrintBufferIndex, LinesPrinted, 1, Store."Print Receipt Bitmap No.");
             PrintHeader(Transaction, FALSE, 2, sender, Globals, UseTransactionStoreAndPOSForPrintHeader);
 
@@ -1229,7 +1626,7 @@ then
 
             end else begin
 
-                PrintSubHeader(Transaction, 2, Transaction.Date, Transaction.Time, sender, LineLen, InvLineLen);
+                PrintSubHeader(Transaction, 2, Transaction.Date, Transaction.Time, sender, LineLen, InvLineLen, POSHardwareProfile);
 
             end;
 
@@ -1242,10 +1639,10 @@ then
                 if (POSHardwareProfile."HWST Sync") then begin
 
 
-                    pQRPath := AlamerUtils.getAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                    pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
                 end else begin
 
-                    pQRPath := AlamerUtils.getClientAmrBarcode(RQRCodeRec, Transaction."Receipt No.", 900, 100);
+                    pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
 
                 end;
                 sender.PrintBitmap(2, pQRPath, 1);
@@ -1285,14 +1682,29 @@ then
             if not (Transaction."Sale Is Return Sale")
             then begin
                 grossamnt := -Transaction."Gross Amount";
+                if not (Transaction."Customer No." = '') then begin
+
+
+                    SchedJob.SetFilter("Job ID", '*TO BC22');
+                    if SchedJob.FindFirst() then begin
+                        Sched.Run(SchedJob);
+
+                        //clearInvoie(Transaction);
+
+
+                    end;
+                end;
                 if (POSHardwareProfile."HWST Sync") then begin
 
-                    ZlQRPath := AlamerUtils.getZakatQr(ZQRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
+                    ZlQRPath := AlamerUtils.getZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
 
                 end else begin
-                    ZlQRPath := AlamerUtils.getClientZakatQr(ZQRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
+                    ZlQRPath := AlamerUtils.getClientZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
 
                 end;
+
+
+
                 // ZlQRPath := FileMgt.BLOBExport(ZQRCodeRec, 'QrBmpExp.bmp', FALSE);
                 //  Message(ZlQRPath);
 
@@ -1373,7 +1785,7 @@ then
 
     end;
 
-    procedure PrintSubHeader(VAR Transaction: Record "Transaction Header"; Tray: Integer; PrDate: Date; PrTime: Time; sender: Codeunit "POS Print Utility"; LineLen: Integer; InvLineLen: Integer)
+    procedure PrintSubHeader(VAR Transaction: Record "Transaction Header"; Tray: Integer; PrDate: Date; PrTime: Time; sender: Codeunit "POS Print Utility"; LineLen: Integer; InvLineLen: Integer; POSHardwareProfile: Record "POS Hardware Profile")
 
     //PrintSubHeader
     //LS-12346-
@@ -1381,16 +1793,19 @@ then
         StaffName: Text;
         blankStr: Text;
         DSTR1: Text;
+        pQRPath: Text;
 
         Value: array[4] of Text;
         NodeName: array[4] of Text;
         Staff: Record Staff;
         CustomerRec: Record Customer;
         TransType: Text;
+        AlamerUtils: Codeunit InvoiceUtils;
 
 
 
     begin
+
 
 
         if (Transaction."To Account")
@@ -1426,6 +1841,21 @@ then
         // sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, FALSE, TRUE, FALSE, FALSE, Tray);
         //EDMABODON_20201104: Add Header --
 
+        /*
+                if (POSHardwareProfile."HWST Sync") then begin
+
+
+                    pQRPath := AlamerUtils.getTextBitmap('طلب #' + Transaction.Comment, 300, 30, 15, 2, POSHardwareProfile."HWST Host" + ':8094');
+
+
+                end else begin
+
+                    pQRPath := AlamerUtils.getClientTextBitmap('طلب#' + '10', 150, 30, 15, 2);
+
+                end;
+                sender.PrintBitmap(2, pQRPath, 1);
+                */
+
         CLEAR(Value);
         DSTR1 := '#R#####################' + blankStr + '#R#############';
         Value[1] := Transaction."Receipt No.";
@@ -1436,6 +1866,11 @@ then
 
         sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
         sender.AddPrintLine(200, 2, NodeName, Value, DSTR1, FALSE, TRUE, FALSE, FALSE, Tray);
+
+
+
+
+
         StaffName := Transaction."Staff ID";
         IF Staff.GET(Transaction."Staff ID") THEN
             StaffName := Staff."Name on Receipt";
@@ -2090,6 +2525,8 @@ then
                         CompressItemOK := FALSE;
                         LastQuantity := 0;
                     END;
+                    if (SalesEntry."Unit of Measure" = 'KG') then
+                        CompressItemOK := FALSE;
                 END;
                 IF (NOT SalesEntry."Deal Line") THEN
                     sender.InsertIntoRecipeBuffer(
@@ -2701,7 +3138,7 @@ then
                         sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
                     END;
                     //DSTR1 := '#L #N## #N######## #N######## #N########';
-                    DSTR1 := '#L #N######## #N##### #N##### #N########';
+                    DSTR1 := '#L #N######## #N####### #N### #N########';
                     VATPrinted := TRUE;
                     Value[1] := VATCode[i];
                     NodeName[1] := 'VAT Code';//edmabodon
@@ -3969,13 +4406,13 @@ then
             IF (VariantCode <> '') AND
                (ItemVariant.GET(ItemNo, VariantCode))
             THEN BEGIN
-                ItemName := COPYSTR(ItemVariant."Description 2", 1, 27);
+                ItemName := COPYSTR(ItemVariant."Description 2", 1, 32);
                 IF ItemName = '' THEN
-                    ItemName := COPYSTR(ItemVariant.Description, 1, 27)
+                    ItemName := COPYSTR(ItemVariant.Description, 1, 32)
             END ELSE BEGIN
-                ItemName := COPYSTR(Item."Description 2", 1, 27);
+                ItemName := COPYSTR(Item."Description 2", 1, 32);
                 IF ItemName = '' THEN
-                    ItemName := COPYSTR(Item.Description, 1, 27)
+                    ItemName := COPYSTR(Item.Description, 1, 32)
             END
         END ELSE BEGIN
             ItemName := ItemNo;
@@ -3996,13 +4433,13 @@ then
             IF (VariantCode <> '') AND
                (ItemVariant.GET(ItemNo, VariantCode))
             THEN BEGIN
-                ItemName := COPYSTR(ItemVariant."Description", 1, 27);
+                ItemName := COPYSTR(ItemVariant."Description", 1, 32);
                 IF ItemName = '' THEN
-                    ItemName := COPYSTR(ItemVariant.Description, 1, 27)
+                    ItemName := COPYSTR(ItemVariant.Description, 1, 32)
             END ELSE BEGIN
-                ItemName := COPYSTR(Item."Description", 1, 27);
+                ItemName := COPYSTR(Item."Description", 1, 32);
                 IF ItemName = '' THEN
-                    ItemName := COPYSTR(Item.Description, 1, 27)
+                    ItemName := COPYSTR(Item.Description, 1, 32)
             END
         END ELSE BEGIN
             ItemName := ItemNo;
@@ -4295,5 +4732,169 @@ then
         end;
 
     end;
+
+
+    procedure createVendorGiftcard(var POSTransaction: Record "POS Transaction"; Amount: Decimal)
+    var
+        //TSUtil: Codeunit "POS Transaction Server Utility";
+        DataEntry: Record "POS Data Entry";
+        Voucher: Record "Voucher Entries";
+        errorText: Text;
+
+    begin
+        DataEntry.Init();
+        DataEntry.Amount := Amount;
+        DataEntry."Applied Amount" := -Amount;
+        DataEntry."Created by Receipt No." := POSTransaction."Receipt No.";
+        DataEntry."Created by Line No." := 10000;
+        DataEntry."Entry Type" := 'UNILEVER';
+        DataEntry."Entry Code" := 'UNL2022' + FORMAT(Random(999999));
+        DataEntry."Created in Store No." := POSTransaction."Store No.";
+        DataEntry."Applied Amount" := 0;
+        DataEntry."Date Applied" := 0D;
+        DataEntry.Insert();
+
+        Voucher."Entry Type" := Voucher."Entry Type"::Issued;
+        Voucher.Amount := Amount;
+        Voucher."Voucher No." := DataEntry."Entry Code";
+        Voucher."Line No." := 10000;
+        Voucher."POS Terminal No." := POSTransaction."POS Terminal No.";
+        Voucher."Store No." := POSTransaction."Store No.";
+        Voucher."Receipt Number" := POSTransaction."Receipt No.";
+        Voucher."Transaction No." := 0;
+        Voucher."Voucher Type" := 'UNILEVER';
+        Voucher.Date := Today;
+        Voucher.Time := Time;
+        Voucher.Insert();
+        Message('Created voucher ' + Format(Amount));
+
+
+
+
+        //TSUtil.UpdateDataEntry(DataEntry, errorText);
+
+
+    end;
+
+
+    procedure createGenGiftcard(var POSTransaction: Record "POS Transaction"; Amount: Decimal; CardName: Text)
+    var
+        //TSUtil: Codeunit "POS Transaction Server Utility";
+        DataEntry: Record "POS Data Entry";
+        Voucher: Record "Voucher Entries";
+        errorText: Text;
+
+    begin
+        DataEntry.Init();
+        DataEntry.Amount := Amount;
+        DataEntry."Applied Amount" := -Amount;
+        DataEntry."Created by Receipt No." := POSTransaction."Receipt No.";
+        DataEntry."Created by Line No." := 10000;
+        DataEntry."Entry Type" := CardName;
+        DataEntry."Entry Code" := 'CRD2022' + FORMAT(Random(999999));
+        DataEntry."Created in Store No." := POSTransaction."Store No.";
+        DataEntry."Applied Amount" := 0;
+        DataEntry."Date Applied" := 0D;
+        DataEntry.Insert();
+
+        Voucher."Entry Type" := Voucher."Entry Type"::Issued;
+        Voucher.Amount := Amount;
+        Voucher."Voucher No." := DataEntry."Entry Code";
+        Voucher."Line No." := 10000;
+        Voucher."POS Terminal No." := POSTransaction."POS Terminal No.";
+        Voucher."Store No." := POSTransaction."Store No.";
+        Voucher."Receipt Number" := POSTransaction."Receipt No.";
+        Voucher."Transaction No." := 0;
+        Voucher."Voucher Type" := 'UNILEVER';
+        Voucher.Date := Today;
+        Voucher.Time := Time;
+        Voucher.Insert();
+        //Message('Created voucher ' + Format(Amount));
+
+
+
+
+        //TSUtil.UpdateDataEntry(DataEntry, errorText);
+
+
+    end;
+
+
+    procedure clearInvoie(Trans: Record "Transaction Header")
+    var
+        Json: JsonObject;
+        JsonText: Text;
+        ResponseText: Text;
+        url: Text[200];
+        status: Text[200];
+        Client: HttpClient;
+        Content: HttpContent;
+        ResponseMessage: HttpResponseMessage;
+        RequestMessage: HttpRequestMessage;
+        header: HttpHeaders;
+
+        JsonResponse: JsonObject;
+        ResponseStatus: JsonToken;
+        ResponseReasons: JsonToken;
+        ResponseQr: JsonToken;
+        ResponseNo: JsonToken;
+
+        BinaryWriter: DotNet BinaryWriter;
+        Encoding: DotNet Encoding;
+        ins: OutStream;
+
+
+    begin
+
+        // url := 'https://hooks.slack.com/services/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';
+        url := 'https://backoffice.alamer-market.com/api/middleware/signLSInvoice';
+
+        Json.Add('company', CompanyName);
+        Json.Add('store', Trans."Store No.");
+        Json.Add('terminal', Trans."POS Terminal No.");
+        Json.Add('transaction', Trans."Transaction No.");
+        Json.Add('type', 'invoice');
+
+        // Json.Add('icon_emoji', CustSetting."Slack Logo");
+        Json.WriteTo(JsonText);
+        Content.WriteFrom(JsonText);
+        Content.ReadAs(JsonText);
+        Content.GetHeaders(header);
+        header.Remove('Content-Type');
+        header.Add('Content-Type', 'application/json');
+        RequestMessage.Content(Content);
+
+        RequestMessage.SetRequestUri(Url);
+        RequestMessage.Method('POST');
+        client.Send(RequestMessage, ResponseMessage);
+
+
+        ResponseMessage.Content.ReadAs(ResponseText);
+
+
+
+
+        JsonResponse.ReadFrom(ResponseText);
+        JsonResponse.Get('status', ResponseStatus);
+        JsonResponse.Get('qrcodetext', ResponseQr);
+        JsonResponse.Get('company', ResponseNo);
+        JsonResponse.Get('reasons', ResponseReasons);
+
+
+
+        status := ResponseStatus.AsValue().AsText();
+        //Message(ResponseText);
+        if (status = 'CLEARED') or (status = 'REPORTED') or (status = 'مقبولة') then begin
+            Message(FORMAT(ResponseStatus.AsValue().AsText()));
+        end else begin
+
+            ERROR(FORMAT(ResponseStatus.AsValue().AsText()))
+
+        end;
+
+    end;
+
+
+
 
 }

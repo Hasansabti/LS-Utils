@@ -226,12 +226,21 @@ codeunit 50004 AlamerPOSUtils
         EPOSCtrl: Codeunit "EPOS Control Interface";
         POSHtml: Codeunit "EPOS Control Interface HTML";
         POSSession: Codeunit "POS Session";
+        Customer: Record Customer;
+        MafithPOS: Text;
     begin
 
         if (CustomerOrCardNo = 'CU-120') then begin
+
             if (POSSession.IsWebClient()) then begin
+                Customer.Get(CustomerOrCardNo);
+                if (Customer."Home Page" = '') then begin
+                    MafithPOS := 'https://pos.manafith.sa/';
+                end else begin
+                    MafithPOS := Customer."Home Page";
+                end;
                 POSHtml.AddJavaScript(
-            'let newWindow = open(''https://pos.manafithsys.com/'', ''https://pos.manafithsys.com/'', ''width=900,height=900''); newWindow.focus();'
+            'let newWindow = open(''' + MafithPOS + ''', ''' + MafithPOS + ''', ''width=900,height=900''); newWindow.focus();'
               );
             end
         end;
@@ -346,7 +355,7 @@ POSTrans: Record "POS Transaction";
             EXIT(TRUE);
 
 
-        POSTerminal.GET(Transaction."POS Terminal No.");
+        POSTerminal.GET(Globals.TerminalNo());
         Store.Get(Transaction."Store No.");
         if (POSTerminal."Hardware Profile" = '') then begin
             POSHardwareProfile.Get(Store."Hardware Profile");
@@ -381,10 +390,10 @@ POSTrans: Record "POS Transaction";
             if (POSHardwareProfile."HWST Sync") then begin
 
 
-                pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                pQRPath := AlamerUtils.getAmrBarcode(Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
             end else begin
 
-                pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
+                pQRPath := AlamerUtils.getClientAmrBarcode(Transaction."Receipt No.", 900, 100);
 
             end;
 
@@ -612,179 +621,179 @@ POSTrans: Record "POS Transaction";
         end;
 
     end;
+    /*
+        [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintKOTLine', '', true, true)]
+        procedure OnBeforePrintKOTLine(var KOTHeader: Record "KOT Header"; PrintBuffer: Record "POS Print Buffer"; PrintBufferIndex: Integer; LinesPrinted: Integer; var Proceed: Boolean; var DSTR1: Text[100]; Value: array[10] of Text[120]; sender: Codeunit "POS Print Utility")
+        VAR
+            POSText: Record 99001492;
+            LineLength: Integer;
+            Terminal: Record 99001471;
+            ReceiptHeader: Record 99001498;
+            RetailUtil: Codeunit 99001462;
+            ReceiptNo: Code[20];
+            SeatNo: Integer;
+            PosTrGuestInfo: Record 10012117;
+            ResTbl: Record 10001206;
+            KOTLineRouting: Record 10012127;
+            KOTLineModifier: Record 10012128;
+            KOTLine: Record 10012126;
+            Quan: Text[30];
+            Sts: Text[30];
+            DelKOT: Text[30];
+            KOTLineTEMP: Record 10012126 TEMPORARY;
+            LastMenuTypeDescription: Text[30];
+            Item: Record Item;
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintKOTLine', '', true, true)]
-    procedure OnBeforePrintKOTLine(var KOTHeader: Record "KOT Header"; PrintBuffer: Record "POS Print Buffer"; PrintBufferIndex: Integer; LinesPrinted: Integer; var Proceed: Boolean; var DSTR1: Text[100]; Value: array[10] of Text[120]; sender: Codeunit "POS Print Utility")
-    VAR
-        POSText: Record 99001492;
-        LineLength: Integer;
-        Terminal: Record 99001471;
-        ReceiptHeader: Record 99001498;
-        RetailUtil: Codeunit 99001462;
-        ReceiptNo: Code[20];
-        SeatNo: Integer;
-        PosTrGuestInfo: Record 10012117;
-        ResTbl: Record 10001206;
-        KOTLineRouting: Record 10012127;
-        KOTLineModifier: Record 10012128;
-        KOTLine: Record 10012126;
-        Quan: Text[30];
-        Sts: Text[30];
-        DelKOT: Text[30];
-        KOTLineTEMP: Record 10012126 TEMPORARY;
-        LastMenuTypeDescription: Text[30];
-        Item: Record Item;
+            Tray: Integer;
+        begin
+            Tray := 2;
 
-        Tray: Integer;
-    begin
-        Tray := 2;
-
-        // Value[1] := 'الكمية                            الوصف';
-        // DSTR1 := '#L#######################################';
-        // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-        // sender.PrintSeperator(Tray);
-
-
-        DSTR1 := '#R##### #R##### #R#######################';
-        Value[3] := 'الوصف';
-        Value[2] := 'الوحدة';
-        Value[1] := 'الكمية';
-        sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-        sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
-        sender.PrintSeperator(Tray);
+            // Value[1] := 'الكمية                            الوصف';
+            // DSTR1 := '#L#######################################';
+            // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+            // sender.PrintSeperator(Tray);
 
 
-
-        KOTLineRouting.RESET;
-        KOTLineRouting.SETCURRENTKEY("KOT No.", "Display Station ID", "Line Printed");
-        KOTLineRouting.SETRANGE("KOT No.", KOTHeader."KOT No.");
-        KOTLineRouting.SETRANGE("Display Station ID", KOTHeader."Printer Station ID");
-        //  IF NOT PrintAllLines THEN
-        //      KOTLineRouting.SETFILTER("Line Printed", '<>%1', KOTLineRouting."Line Printed"::Yes);
-        //      KOTLineRouting.SETFILTER("Line Printed", '<>%1', KOTLineRouting."Line Printed"::Yes);
-
-        KOTLineTEMP.RESET;
-        KOTLineTEMP.DELETEALL;
-        IF KOTLineRouting.FINDSET THEN
-            REPEAT
-                IF KOTLine.GET(KOTLineRouting."KOT No.", KOTLineRouting."KOT Line No.") THEN BEGIN
-                    KOTLineTEMP := KOTLine;
-                    KOTLineTEMP."Line Printed" := KOTLineRouting."Line Printed";
-                    IF KOTLineTEMP.INSERT THEN;
-                END;
-            UNTIL KOTLineRouting.NEXT = 0;
-
-        KOTLineRouting.MODIFYALL("Line Printed", KOTLineRouting."Line Printed"::Yes);
-
-        COMMIT;
-
-        KOTLineTEMP.RESET;
-        KOTLineTEMP.SETCURRENTKEY("KOT No.", "Menu Type");
-        LastMenuTypeDescription := '';
-        IF KOTLineTEMP.FINDSET THEN
-            REPEAT
-                IF KOTLineTEMP."Menu Type Description" <> LastMenuTypeDescription THEN BEGIN
-                    sender.PrintLine(Tray, '');
-                    Value[1] := KOTLineTEMP."Menu Type Description";
-                    DSTR1 := '#L#######################################';
-                    sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-                    LastMenuTypeDescription := KOTLineTEMP."Menu Type Description";
-
-                END;
-                //DSTR1 := '#L###################### #R####### #R###';
-
-                //Arabic descripstion
-                DSTR1 := '#L############################ #R#######';
-                Value[3] := '';
-                IF KOTLineTEMP."Line Printed" IN [KOTLineTEMP."Line Printed"::Yes, KOTLineTEMP."Line Printed"::"Reprint-Modifier"] THEN
-                    Value[3] := '*';
-                IF KOTLineTEMP.Voided THEN
-                    Value[3] += '(-)';
-                Value[3] += KOTLineTEMP.Description.Replace('Piece', '').Replace('Small', '');
-
-                DSTR1 := '#R#######################################';
-                Value[1] := Value[3];
-                Value[2] := '';
-                Value[3] := '';
-                sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-                sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+            DSTR1 := '#R##### #R##### #R#######################';
+            Value[3] := 'الوصف';
+            Value[2] := 'الوحدة';
+            Value[1] := 'الكمية';
+            sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+            sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+            sender.PrintSeperator(Tray);
 
 
-                //English descripstion
-                if Item.Get(KOTLineTEMP."No.") then begin
+
+            KOTLineRouting.RESET;
+            KOTLineRouting.SETCURRENTKEY("KOT No.", "Display Station ID", "Line Printed");
+            KOTLineRouting.SETRANGE("KOT No.", KOTHeader."KOT No.");
+            KOTLineRouting.SETRANGE("Display Station ID", KOTHeader."Printer Station ID");
+            //  IF NOT PrintAllLines THEN
+            //      KOTLineRouting.SETFILTER("Line Printed", '<>%1', KOTLineRouting."Line Printed"::Yes);
+            //      KOTLineRouting.SETFILTER("Line Printed", '<>%1', KOTLineRouting."Line Printed"::Yes);
+
+            KOTLineTEMP.RESET;
+            KOTLineTEMP.DELETEALL;
+            IF KOTLineRouting.FINDSET THEN
+                REPEAT
+                    IF KOTLine.GET(KOTLineRouting."KOT No.", KOTLineRouting."KOT Line No.") THEN BEGIN
+                        KOTLineTEMP := KOTLine;
+                        KOTLineTEMP."Line Printed" := KOTLineRouting."Line Printed";
+                        IF KOTLineTEMP.INSERT THEN;
+                    END;
+                UNTIL KOTLineRouting.NEXT = 0;
+
+            KOTLineRouting.MODIFYALL("Line Printed", KOTLineRouting."Line Printed"::Yes);
+
+            COMMIT;
+
+            KOTLineTEMP.RESET;
+            KOTLineTEMP.SETCURRENTKEY("KOT No.", "Menu Type");
+            LastMenuTypeDescription := '';
+            IF KOTLineTEMP.FINDSET THEN
+                REPEAT
+                    IF KOTLineTEMP."Menu Type Description" <> LastMenuTypeDescription THEN BEGIN
+                        sender.PrintLine(Tray, '');
+                        Value[1] := KOTLineTEMP."Menu Type Description";
+                        DSTR1 := '#L#######################################';
+                        sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                        LastMenuTypeDescription := KOTLineTEMP."Menu Type Description";
+
+                    END;
+                    //DSTR1 := '#L###################### #R####### #R###';
+
+                    //Arabic descripstion
+                    DSTR1 := '#L############################ #R#######';
+                    Value[3] := '';
+                    IF KOTLineTEMP."Line Printed" IN [KOTLineTEMP."Line Printed"::Yes, KOTLineTEMP."Line Printed"::"Reprint-Modifier"] THEN
+                        Value[3] := '*';
+                    IF KOTLineTEMP.Voided THEN
+                        Value[3] += '(-)';
+                    Value[3] += KOTLineTEMP.Description.Replace('Piece', '').Replace('Small', '');
+
                     DSTR1 := '#R#######################################';
-                    Value[1] := Item.Description;
+                    Value[1] := Value[3];
                     Value[2] := '';
                     Value[3] := '';
                     sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
                     sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
-                end;
-                // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
-                // NodeName[1] := 'Item Description';
-                // NodeName[2] := 'Quantity';
-                // sender.AddPrintLine(300, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
-
-                //Unit and quantity
-                DSTR1 := '#R### #R##### #R#########################';
-                Value[3] := '';
-                Value[2] := FORMAT(KOTLineTEMP."Unit Of Measure");
-                Value[1] := FORMAT(KOTLineTEMP.Quantity);
-                sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-                sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
 
 
-
-
-
-
-
-                KOTLineModifier.RESET;
-                KOTLineModifier.SETRANGE("KOT No.", KOTLineTEMP."KOT No.");
-                KOTLineModifier.SETRANGE("KOT Line No.", KOTLineTEMP."KOT Line No.");
-                // KOTLineModifier.SETFILTER("Line Type", '<>%1', KOTLineModifier."Line Type"::Ingredient);  //LS-12266
-                IF KOTLineModifier.FINDSET(TRUE, FALSE) THEN
-                    REPEAT
-
-                        //  Message(KOTLineModifier.Description);
-                        DSTR1 := '#L####### #R############################';
+                    //English descripstion
+                    if Item.Get(KOTLineTEMP."No.") then begin
+                        DSTR1 := '#R#######################################';
+                        Value[1] := Item.Description;
                         Value[2] := '';
-                        IF KOTLineModifier."Line Printed" = KOTLineModifier."Line Printed"::Yes THEN
-                            Value[2] := '*';
-                        IF KOTLineModifier.Voided THEN
-                            Value[2] += '(-)';
+                        Value[3] := '';
+                        sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                        sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+                    end;
+                    // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+                    // NodeName[1] := 'Item Description';
+                    // NodeName[2] := 'Quantity';
+                    // sender.AddPrintLine(300, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+
+                    //Unit and quantity
+                    DSTR1 := '#R### #R##### #R#########################';
+                    Value[3] := '';
+                    Value[2] := FORMAT(KOTLineTEMP."Unit Of Measure");
+                    Value[1] := FORMAT(KOTLineTEMP.Quantity);
+                    sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                    sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
 
 
-                        Value[2] += KOTLineModifier.Description;
-
-                        if Item.Get(KOTLineModifier."Item Modifier No.") then begin
-                            Value[2] += ' - ' + Item.Description;
-                        end;
-                        CASE KOTLineModifier."Line Info Type" OF
-                            KOTLineModifier."Line Info Type"::Item:
-                                Value[1] := FORMAT(KOTLineModifier.Quantity);
-                            KOTLineModifier."Line Info Type"::Text:
-                                IF KOTLineModifier.Quantity > 1 THEN
-                                    Value[1] := FORMAT(KOTLineModifier.Quantity)
-                                ELSE
-                                    Value[1] := '';
-                        END;
-                        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
-                        NodeName[1] := 'Item Description';
-                        NodeName[2] := 'Quantity';
-                        sender.AddPrintLine(350, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
-                        IF KOTLineModifier."Line Printed" <> KOTLineModifier."Line Printed"::Yes THEN BEGIN
-                            KOTLineModifier."Line Printed" := KOTLineModifier."Line Printed"::Yes;
-                            KOTLineModifier.MODIFY;
-                        END;
-                    UNTIL KOTLineModifier.NEXT = 0;
-                sender.PrintSeperator(2);
-            UNTIL KOTLineTEMP.NEXT = 0;
-
-        COMMIT;
-        Proceed := false;
-    end;
 
 
+
+
+
+                    KOTLineModifier.RESET;
+                    KOTLineModifier.SETRANGE("KOT No.", KOTLineTEMP."KOT No.");
+                    KOTLineModifier.SETRANGE("KOT Line No.", KOTLineTEMP."KOT Line No.");
+                    // KOTLineModifier.SETFILTER("Line Type", '<>%1', KOTLineModifier."Line Type"::Ingredient);  //LS-12266
+                    IF KOTLineModifier.FINDSET(TRUE, FALSE) THEN
+                        REPEAT
+
+                            //  Message(KOTLineModifier.Description);
+                            DSTR1 := '#L####### #R############################';
+                            Value[2] := '';
+                            IF KOTLineModifier."Line Printed" = KOTLineModifier."Line Printed"::Yes THEN
+                                Value[2] := '*';
+                            IF KOTLineModifier.Voided THEN
+                                Value[2] += '(-)';
+
+
+                            Value[2] += KOTLineModifier.Description;
+
+                            if Item.Get(KOTLineModifier."Item Modifier No.") then begin
+                                Value[2] += ' - ' + Item.Description;
+                            end;
+                            CASE KOTLineModifier."Line Info Type" OF
+                                KOTLineModifier."Line Info Type"::Item:
+                                    Value[1] := FORMAT(KOTLineModifier.Quantity);
+                                KOTLineModifier."Line Info Type"::Text:
+                                    IF KOTLineModifier.Quantity > 1 THEN
+                                        Value[1] := FORMAT(KOTLineModifier.Quantity)
+                                    ELSE
+                                        Value[1] := '';
+                            END;
+                            sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+                            NodeName[1] := 'Item Description';
+                            NodeName[2] := 'Quantity';
+                            sender.AddPrintLine(350, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+                            IF KOTLineModifier."Line Printed" <> KOTLineModifier."Line Printed"::Yes THEN BEGIN
+                                KOTLineModifier."Line Printed" := KOTLineModifier."Line Printed"::Yes;
+                                KOTLineModifier.MODIFY;
+                            END;
+                        UNTIL KOTLineModifier.NEXT = 0;
+                    sender.PrintSeperator(2);
+                UNTIL KOTLineTEMP.NEXT = 0;
+
+            COMMIT;
+            Proceed := false;
+        end;
+
+    */
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintHeader', '', true, true)]
     procedure OnBeforePrintHeader(Transaction: Record "Transaction Header"; PreReceipt: Boolean; Tray: Integer; PrintBuffer: Record "POS Print Buffer"; PrintBufferIndex: Integer; LinesPrinted: Integer; var Proceed: Boolean; sender: Codeunit "POS Print Utility"; Globals: Codeunit "POS Session"; UseTransactionStoreAndPOSForPrintHeader: Boolean)
     begin
@@ -1442,8 +1451,18 @@ then
         Clear(Json);
         Clear(Content);
         Clear(RequestMessage);
-        url := 'https://hooks.slack.com/services/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';
+        url := '';
+        if (url.Contains('Bakery')) then begin
+            url := '';
+        end;
+        if (url.Contains('Market')) then begin
+            url := 'https://hooks.slack.com/services/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';
+        end;
 
+
+        if (url = '') then begin
+            EXIT;
+        end;
         TransLine.SetFilter("Receipt No.", Transaction."Receipt No.");
 
 
@@ -1564,7 +1583,7 @@ then
         //LS-12824+
         IF Transaction."Transaction No." = 0 THEN
             EXIT(TRUE);
-        POSTerminal.GET(Transaction."POS Terminal No.");
+        POSTerminal.GET(Globals.TerminalNo());
         Store.Get(Transaction."Store No.");
         if (POSTerminal."Hardware Profile" = '') then begin
             POSHardwareProfile.Get(Store."Hardware Profile");
@@ -1639,10 +1658,10 @@ then
                 if (POSHardwareProfile."HWST Sync") then begin
 
 
-                    pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                    pQRPath := AlamerUtils.getAmrBarcode(Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
                 end else begin
 
-                    pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
+                    pQRPath := AlamerUtils.getClientAmrBarcode(Transaction."Receipt No.", 900, 100);
 
                 end;
                 sender.PrintBitmap(2, pQRPath, 1);
@@ -1696,10 +1715,10 @@ then
                 end;
                 if (POSHardwareProfile."HWST Sync") then begin
 
-                    ZlQRPath := AlamerUtils.getZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
+                    ZlQRPath := AlamerUtils.getZakatQr(Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
 
                 end else begin
-                    ZlQRPath := AlamerUtils.getClientZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
+                    ZlQRPath := AlamerUtils.getClientZakatQr(Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
 
                 end;
 
@@ -1730,7 +1749,11 @@ then
             bSecondPrintActive := FALSE;
             Transaction.IncPrintedCounter(1);
             COMMIT;
+
+            //  SLEEP(2000);//EDM
+            GenerateOneCardVoucher(Transaction, sender);//EDM
             EXIT(TRUE);
+
         END;
     end;
 
@@ -2781,6 +2804,8 @@ then
                     sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, (RecipeBufferTEMP."Periodic Discount" <> 0) or (RecipeBufferTEMP."Promotion No." <> ''), FALSE, FALSE));
                     sender.AddPrintLine(300, 7, NodeName, Value, DSTR1, FALSE, (RecipeBufferTEMP."Periodic Discount" <> 0) or (RecipeBufferTEMP."Promotion No." <> ''), FALSE, FALSE, Tray);
                     PrintSeperator(Tray, sender);
+
+
                 END
                 ELSE BEGIN //EDMABODON Print Item lines
 
@@ -2802,7 +2827,7 @@ then
                     sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, (RecipeBufferTEMP."Periodic Discount" <> 0) or (RecipeBufferTEMP."Promotion No." <> ''), FALSE, FALSE));
                     sender.AddPrintLine(300, 1, NodeName, Value, DSTR1, FALSE, (RecipeBufferTEMP."Periodic Discount" <> 0) or (RecipeBufferTEMP."Promotion No." <> ''), FALSE, FALSE, Tray);
                     //EDMABODON Item Description on two rows ++
-                    lItemName2 := COPYSTR(ItemName, 31, 41);
+                    lItemName2 := COPYSTR(ItemName, 31, 10);
                     IF STRLEN(lItemName2) > 0 THEN BEGIN
                         CLEAR(Value);
                         Value[1] := lItemName2;
@@ -2851,9 +2876,10 @@ then
                     IF RecipeBufferDetailTEMP_l.FINDSET THEN
                         REPEAT
                             IF RecipeBufferDetailTEMP_l."Offer Type" = RecipeBufferDetailTEMP_l."Offer Type"::Line THEN
-                                DiscountText := 'Text084'
+                                DiscountText := 'Line Discount'
                             ELSE
                                 DiscountText := FORMAT(RecipeBufferDetailTEMP_l."Offer Type");
+
                             CLEAR(PeriodicDiscount);
                             IF RecipeBufferDetailTEMP_l."Offer Type" = RecipeBufferDetailTEMP_l."Offer Type"::Coupon THEN BEGIN
                                 IF CouponHeader.GET(RecipeBufferDetailTEMP_l."Offer No.") THEN
@@ -2864,9 +2890,9 @@ then
                                 ELSE
                                     CASE RecipeBufferDetailTEMP_l."Offer Type" OF
                                         RecipeBufferDetailTEMP_l."Offer Type"::Total:
-                                            DiscountText := 'Text024';
+                                            DiscountText := 'Total Discount';
                                         RecipeBufferDetailTEMP_l."Offer Type"::Line:
-                                            DiscountText := 'Text084';
+                                            DiscountText := 'Line Discount';
                                         ELSE
                                             DiscountText := FORMAT(RecipeBufferDetailTEMP_l."Offer Type");
                                     END;
@@ -3914,8 +3940,30 @@ then
 
                     sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, (RecipeBufferTEMP."Periodic Discount" <> 0) or (RecipeBufferTEMP."Promotion No." <> ''), FALSE, FALSE));
                     sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, (RecipeBufferTEMP."Periodic Discount" <> 0) or (RecipeBufferTEMP."Promotion No." <> ''), FALSE, FALSE, Tray);
+
+
+
+
                     PrintSeperator(Tray, sender);
                 END;
+                if ((RecipeBufferTEMP."Promotion No." <> ''))
+                    then begin
+
+
+                    DSTR2 := '   #L################# #N############   ';
+                    Value[1] := RecipeBufferTEMP."Promotion No.";
+                    NodeName[1] := 'Promotion No.';
+                    Value[2] := POSFunctions.FormatAmount(RecipeBufferTEMP."Discount Amount");
+                    NodeName[2] := 'Detail Amount';
+
+                    sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR2), FALSE, FALSE, FALSE, FALSE));
+                    sender.AddPrintLine(360, 3, NodeName, Value, DSTR2, FALSE, FALSE, FALSE, FALSE, Tray);
+
+
+                end;
+
+
+
                 IF GenPosFunc."Print Free Text on Receipt" THEN
                     sender.PrintFreeTextLinesFromBuffer(RecipeBufferTEMP, RecipeBufferTransInfoTextTEMP, Tray, FALSE);
                 //TODO
@@ -3940,7 +3988,7 @@ then
                     IF RecipeBufferDetailTEMP_l.FINDSET THEN
                         REPEAT
                             IF RecipeBufferDetailTEMP_l."Offer Type" = RecipeBufferDetailTEMP_l."Offer Type"::Line THEN
-                                DiscountText := 'Text084'
+                                DiscountText := 'Line Discount'
                             ELSE
                                 DiscountText := FORMAT(RecipeBufferDetailTEMP_l."Offer Type");
                             CLEAR(PeriodicDiscount);
@@ -3953,9 +4001,9 @@ then
                                 ELSE
                                     CASE RecipeBufferDetailTEMP_l."Offer Type" OF
                                         RecipeBufferDetailTEMP_l."Offer Type"::Total:
-                                            DiscountText := 'Text024';
+                                            DiscountText := 'Total Discount';
                                         RecipeBufferDetailTEMP_l."Offer Type"::Line:
-                                            DiscountText := 'Text084';
+                                            DiscountText := 'Line Discount';
                                         ELSE
                                             DiscountText := FORMAT(RecipeBufferDetailTEMP_l."Offer Type");
                                     END;
@@ -4466,6 +4514,123 @@ then
         IF ItemTranslation.Description <> '' THEN
             ItemName := COPYSTR(ItemTranslation.Description, 1, 20);
     END;
+
+
+    local procedure GenerateOneCardVoucher(pTransactionHdr: Record "Transaction Header"; sender: Codeunit "POS Print Utility")
+    var
+        lTransInfoEntry: Record "Trans. Infocode Entry";
+    begin
+
+
+
+        lTransInfoEntry.SETRANGE(Infocode, 'SERIALNO');
+        lTransInfoEntry.SETRANGE("Store No.", pTransactionHdr."Store No.");
+        lTransInfoEntry.SETRANGE("POS Terminal No.", pTransactionHdr."POS Terminal No.");
+        lTransInfoEntry.SETRANGE("Transaction No.", pTransactionHdr."Transaction No.");
+        IF lTransInfoEntry.FINDFIRST THEN BEGIN
+            REPEAT
+                // Message('Serial No: ' + lTransInfoEntry.Information);
+                SLEEP(1000);
+                PrintOneCardReport(pTransactionHdr, lTransInfoEntry."Source Code", lTransInfoEntry.Information, sender);
+            UNTIL lTransInfoEntry.NEXT = 0
+        END ELSE
+            EXIT;
+    end;
+
+    local procedure PrintOneCardReport(pTransHdr: Record "Transaction Header"; pSourceCode: Text; pSerialNo: Text; sender: Codeunit "POS Print Utility")
+    var
+        lTransInfoCodeEntry: Record "Trans. Infocode Entry";
+        lPinNo: Text;
+        Staff: Record "Staff";
+        Terminal: Record "POS Terminal";
+        TransHdr: Record "Transaction Header";
+        lItems: Record "Item";
+        Text051: TextConst ENU = 'Staff ID';
+        Text079: TextConst ENU = 'Receipt No';
+    begin
+
+
+
+        lTransInfoCodeEntry.SETRANGE(Infocode, 'PINNO');
+        lTransInfoCodeEntry.SETRANGE("Store No.", pTransHdr."Store No.");
+        lTransInfoCodeEntry.SETRANGE("POS Terminal No.", pTransHdr."POS Terminal No.");
+        lTransInfoCodeEntry.SETRANGE("Transaction No.", pTransHdr."Transaction No.");
+        lTransInfoCodeEntry.SETRANGE("Source Code", pSourceCode);
+        IF NOT lTransInfoCodeEntry.FINDFIRST THEN
+            lPinNo := pSerialNo
+        ELSE
+            lPinNo := lTransInfoCodeEntry.Information;
+
+
+        //Message('PINNO: ' + lPinNo);
+
+        IF NOT Staff.GET(pTransHdr."Staff ID") THEN
+            EXIT;
+        IF NOT Terminal.GET(pTransHdr."POS Terminal No.") THEN
+            EXIT;
+
+        TransHdr.SETRANGE("Store No.", pTransHdr."Store No.");
+        IF NOT (TransHdr.FIND('-')) THEN
+            EXIT;
+
+        IF NOT sender.OpenReceiptPrinter(2, 'COPY', '', 0, '') THEN
+            EXIT;
+
+
+
+
+        sender.PrintLogo(2);
+        sender.PrintHeader(pTransHdr, FALSE, 2);
+
+
+
+        PrintSeperator(2, sender);
+        DSTR1 := '#L###### #T###### #T###';
+        Value[1] := Text048 + ':';
+        Value[2] := FORMAT(TODAY());
+        Value[3] := FORMAT(TIME(), 5);
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+
+        DSTR1 := '#L####### #L##########################';
+        Value[1] := Text079 + ':';
+        Value[2] := pTransHdr."Receipt No.";
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+
+        PrintSeperator(2, sender);
+
+        DSTR1 := '#C###################';
+        Value[1] := 'OneCard Voucher';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), TRUE, TRUE, TRUE, FALSE));
+
+        lItems.GET(lTransInfoCodeEntry."Source Code");
+        DSTR1 := '#L###################################';
+        Value[1] := lItems.Description;
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, TRUE, FALSE));
+
+        //Details
+        PrintSeperator(2, sender);
+        DSTR1 := '#C###################################';
+        // Value[1] := 'Pin No.';
+        Value[1] := FORMAT(lPinNo);
+        Value[2] := '';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+
+
+
+
+        //Footer section
+        PrintSeperator(2, sender);
+        DSTR1 := '#L################ #R################';
+        Value[1] := 'Serial No.';
+        Value[2] := FORMAT(pSerialNo);
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+        PrintSeperator(2, sender);
+
+
+        IF NOT (sender.ClosePrinter(2)) THEN;
+
+
+    end;
 
     //OnAfterPrintLogo
 

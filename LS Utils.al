@@ -390,10 +390,10 @@ POSTrans: Record "POS Transaction";
             if (POSHardwareProfile."HWST Sync") then begin
 
 
-                pQRPath := AlamerUtils.getAmrBarcode(Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
             end else begin
 
-                pQRPath := AlamerUtils.getClientAmrBarcode(Transaction."Receipt No.", 900, 100);
+                pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
 
             end;
 
@@ -609,6 +609,15 @@ POSTrans: Record "POS Transaction";
     var
         EPOSCtrl: Codeunit "EPOS Control Interface";
         Terminal: Record "POS Terminal";
+        POSHardwareProfile: Record "POS Hardware Profile";
+        Store: Record "Store";
+
+        Client: HttpClient;
+        RequestMessage: HttpRequestMessage;
+        ResponseMessage: HttpResponseMessage;
+        JsonText: Text;
+        Content: HttpContent;
+        header: HttpHeaders;
     begin
         // if(EPOSCtrl.getin)
         Terminal.Get(POSTransaction."POS Terminal No.");
@@ -620,180 +629,208 @@ POSTrans: Record "POS Transaction";
             EPOSCtrl.SetInputText('#CUST_PHONE', '');
         end;
 
+
+
+        if (POSHardwareProfile.Get(Terminal."Hardware Profile") and (Store.Get(POSTransaction."Store No."))) then begin
+            if (POSTransaction."POS Terminal No." = 'P098') then begin
+                Message(Terminal."Hardware Profile" + ' ' + POSTransaction."Store No." + ' ' + POSHardwareProfile."MSR Impl. DLL" + ' ' + Store.Address);
+            end;
+            if (POSHardwareProfile."MSR Impl. DLL" <> '') and (Store.Address <> '') then begin
+
+
+
+                JsonText := '{"posId": "' + POSTransaction."POS Terminal No." + '", "ReceiptID":"' + POSTransaction."Receipt No." + '", "rtspUrl": "' + POSHardwareProfile."MSR Impl. DLL" + '"}';
+                Content.WriteFrom(JsonText);
+                Content.GetHeaders(header);
+                header.Remove('Content-Type');
+                header.Add('Content-Type', 'application/json');
+                RequestMessage.Content(Content);
+                RequestMessage.SetRequestUri('http://' + Store.Address + ':84/api/PosRecording/start');
+                RequestMessage.Method('POST');
+                Client.Send(RequestMessage, ResponseMessage);
+                ResponseMessage.Content().ReadAs(JsonText);
+                if (POSTransaction."POS Terminal No." = 'P098') then begin
+                    Message(JsonText);
+                end;
+
+
+            end;
+        end;
+
     end;
-    /*
-        [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintKOTLine', '', true, true)]
-        procedure OnBeforePrintKOTLine(var KOTHeader: Record "KOT Header"; PrintBuffer: Record "POS Print Buffer"; PrintBufferIndex: Integer; LinesPrinted: Integer; var Proceed: Boolean; var DSTR1: Text[100]; Value: array[10] of Text[120]; sender: Codeunit "POS Print Utility")
-        VAR
-            POSText: Record 99001492;
-            LineLength: Integer;
-            Terminal: Record 99001471;
-            ReceiptHeader: Record 99001498;
-            RetailUtil: Codeunit 99001462;
-            ReceiptNo: Code[20];
-            SeatNo: Integer;
-            PosTrGuestInfo: Record 10012117;
-            ResTbl: Record 10001206;
-            KOTLineRouting: Record 10012127;
-            KOTLineModifier: Record 10012128;
-            KOTLine: Record 10012126;
-            Quan: Text[30];
-            Sts: Text[30];
-            DelKOT: Text[30];
-            KOTLineTEMP: Record 10012126 TEMPORARY;
-            LastMenuTypeDescription: Text[30];
-            Item: Record Item;
 
-            Tray: Integer;
-        begin
-            Tray := 2;
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintKOTLine', '', true, true)]
+    procedure OnBeforePrintKOTLine(var KOTHeader: Record "KOT Header"; PrintBuffer: Record "POS Print Buffer"; PrintBufferIndex: Integer; LinesPrinted: Integer; var Proceed: Boolean; var DSTR1: Text[100]; Value: array[10] of Text[120]; sender: Codeunit "POS Print Utility")
+    VAR
+        POSText: Record 99001492;
+        LineLength: Integer;
+        Terminal: Record 99001471;
+        ReceiptHeader: Record 99001498;
+        RetailUtil: Codeunit 99001462;
+        ReceiptNo: Code[20];
+        SeatNo: Integer;
+        PosTrGuestInfo: Record 10012117;
+        ResTbl: Record 10001206;
+        KOTLineRouting: Record 10012127;
+        KOTLineModifier: Record 10012128;
+        KOTLine: Record 10012126;
+        Quan: Text[30];
+        Sts: Text[30];
+        DelKOT: Text[30];
+        KOTLineTEMP: Record 10012126 TEMPORARY;
+        LastMenuTypeDescription: Text[30];
+        Item: Record Item;
 
-            // Value[1] := 'الكمية                            الوصف';
-            // DSTR1 := '#L#######################################';
-            // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-            // sender.PrintSeperator(Tray);
+        Tray: Integer;
+    begin
+        Tray := 2;
 
-
-            DSTR1 := '#R##### #R##### #R#######################';
-            Value[3] := 'الوصف';
-            Value[2] := 'الوحدة';
-            Value[1] := 'الكمية';
-            sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-            sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
-            sender.PrintSeperator(Tray);
+        // Value[1] := 'الكمية                            الوصف';
+        // DSTR1 := '#L#######################################';
+        // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+        // sender.PrintSeperator(Tray);
 
 
+        DSTR1 := '#R##### #R##### #R#######################';
+        Value[3] := 'الوصف';
+        Value[2] := 'الوحدة';
+        Value[1] := 'الكمية';
+        sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+        sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+        sender.PrintSeperator(Tray);
 
-            KOTLineRouting.RESET;
-            KOTLineRouting.SETCURRENTKEY("KOT No.", "Display Station ID", "Line Printed");
-            KOTLineRouting.SETRANGE("KOT No.", KOTHeader."KOT No.");
-            KOTLineRouting.SETRANGE("Display Station ID", KOTHeader."Printer Station ID");
-            //  IF NOT PrintAllLines THEN
-            //      KOTLineRouting.SETFILTER("Line Printed", '<>%1', KOTLineRouting."Line Printed"::Yes);
-            //      KOTLineRouting.SETFILTER("Line Printed", '<>%1', KOTLineRouting."Line Printed"::Yes);
 
-            KOTLineTEMP.RESET;
-            KOTLineTEMP.DELETEALL;
-            IF KOTLineRouting.FINDSET THEN
-                REPEAT
-                    IF KOTLine.GET(KOTLineRouting."KOT No.", KOTLineRouting."KOT Line No.") THEN BEGIN
-                        KOTLineTEMP := KOTLine;
-                        KOTLineTEMP."Line Printed" := KOTLineRouting."Line Printed";
-                        IF KOTLineTEMP.INSERT THEN;
-                    END;
-                UNTIL KOTLineRouting.NEXT = 0;
 
-            KOTLineRouting.MODIFYALL("Line Printed", KOTLineRouting."Line Printed"::Yes);
+        KOTLineRouting.RESET;
+        KOTLineRouting.SETCURRENTKEY("KOT No.", "Display Station ID", "Line Printed");
+        KOTLineRouting.SETRANGE("KOT No.", KOTHeader."KOT No.");
+        KOTLineRouting.SETRANGE("Display Station ID", KOTHeader."Printer Station ID");
+        //  IF NOT PrintAllLines THEN
+        //      KOTLineRouting.SETFILTER("Line Printed", '<>%1', KOTLineRouting."Line Printed"::Yes);
+        //      KOTLineRouting.SETFILTER("Line Printed", '<>%1', KOTLineRouting."Line Printed"::Yes);
 
-            COMMIT;
+        KOTLineTEMP.RESET;
+        KOTLineTEMP.DELETEALL;
+        IF KOTLineRouting.FINDSET THEN
+            REPEAT
+                IF KOTLine.GET(KOTLineRouting."KOT No.", KOTLineRouting."KOT Line No.") THEN BEGIN
+                    KOTLineTEMP := KOTLine;
+                    KOTLineTEMP."Line Printed" := KOTLineRouting."Line Printed";
+                    IF KOTLineTEMP.INSERT THEN;
+                END;
+            UNTIL KOTLineRouting.NEXT = 0;
 
-            KOTLineTEMP.RESET;
-            KOTLineTEMP.SETCURRENTKEY("KOT No.", "Menu Type");
-            LastMenuTypeDescription := '';
-            IF KOTLineTEMP.FINDSET THEN
-                REPEAT
-                    IF KOTLineTEMP."Menu Type Description" <> LastMenuTypeDescription THEN BEGIN
-                        sender.PrintLine(Tray, '');
-                        Value[1] := KOTLineTEMP."Menu Type Description";
-                        DSTR1 := '#L#######################################';
-                        sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-                        LastMenuTypeDescription := KOTLineTEMP."Menu Type Description";
+        KOTLineRouting.MODIFYALL("Line Printed", KOTLineRouting."Line Printed"::Yes);
 
-                    END;
-                    //DSTR1 := '#L###################### #R####### #R###';
+        COMMIT;
 
-                    //Arabic descripstion
-                    DSTR1 := '#L############################ #R#######';
-                    Value[3] := '';
-                    IF KOTLineTEMP."Line Printed" IN [KOTLineTEMP."Line Printed"::Yes, KOTLineTEMP."Line Printed"::"Reprint-Modifier"] THEN
-                        Value[3] := '*';
-                    IF KOTLineTEMP.Voided THEN
-                        Value[3] += '(-)';
-                    Value[3] += KOTLineTEMP.Description.Replace('Piece', '').Replace('Small', '');
+        KOTLineTEMP.RESET;
+        KOTLineTEMP.SETCURRENTKEY("KOT No.", "Menu Type");
+        LastMenuTypeDescription := '';
+        IF KOTLineTEMP.FINDSET THEN
+            REPEAT
+                IF KOTLineTEMP."Menu Type Description" <> LastMenuTypeDescription THEN BEGIN
+                    sender.PrintLine(Tray, '');
+                    Value[1] := KOTLineTEMP."Menu Type Description";
+                    DSTR1 := '#L#######################################';
+                    sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                    LastMenuTypeDescription := KOTLineTEMP."Menu Type Description";
 
+                END;
+                //DSTR1 := '#L###################### #R####### #R###';
+
+                //Arabic descripstion
+                DSTR1 := '#L############################ #R#######';
+                Value[3] := '';
+                IF KOTLineTEMP."Line Printed" IN [KOTLineTEMP."Line Printed"::Yes, KOTLineTEMP."Line Printed"::"Reprint-Modifier"] THEN
+                    Value[3] := '*';
+                IF KOTLineTEMP.Voided THEN
+                    Value[3] += '(-)';
+                Value[3] += KOTLineTEMP.Description.Replace('Piece', '').Replace('Small', '');
+
+                DSTR1 := '#R#######################################';
+                Value[1] := Value[3];
+                Value[2] := '';
+                Value[3] := '';
+                sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+
+
+                //English descripstion
+                if Item.Get(KOTLineTEMP."No.") then begin
                     DSTR1 := '#R#######################################';
-                    Value[1] := Value[3];
+                    Value[1] := Item.Description;
                     Value[2] := '';
                     Value[3] := '';
                     sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
                     sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+                end;
+                // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+                // NodeName[1] := 'Item Description';
+                // NodeName[2] := 'Quantity';
+                // sender.AddPrintLine(300, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+
+                //Unit and quantity
+                DSTR1 := '#R### #R##### #R#########################';
+                Value[3] := '';
+                Value[2] := FORMAT(KOTLineTEMP."Unit Of Measure");
+                Value[1] := FORMAT(KOTLineTEMP.Quantity);
+                sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+                sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
 
 
-                    //English descripstion
-                    if Item.Get(KOTLineTEMP."No.") then begin
-                        DSTR1 := '#R#######################################';
-                        Value[1] := Item.Description;
+
+
+
+
+
+                KOTLineModifier.RESET;
+                KOTLineModifier.SETRANGE("KOT No.", KOTLineTEMP."KOT No.");
+                KOTLineModifier.SETRANGE("KOT Line No.", KOTLineTEMP."KOT Line No.");
+                // KOTLineModifier.SETFILTER("Line Type", '<>%1', KOTLineModifier."Line Type"::Ingredient);  //LS-12266
+                IF KOTLineModifier.FINDSET(TRUE, FALSE) THEN
+                    REPEAT
+
+                        //  Message(KOTLineModifier.Description);
+                        DSTR1 := '#L####### #R############################';
                         Value[2] := '';
-                        Value[3] := '';
-                        sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-                        sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
-                    end;
-                    // sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
-                    // NodeName[1] := 'Item Description';
-                    // NodeName[2] := 'Quantity';
-                    // sender.AddPrintLine(300, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
-
-                    //Unit and quantity
-                    DSTR1 := '#R### #R##### #R#########################';
-                    Value[3] := '';
-                    Value[2] := FORMAT(KOTLineTEMP."Unit Of Measure");
-                    Value[1] := FORMAT(KOTLineTEMP.Quantity);
-                    sender.PrintLine(Tray, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
-                    sender.AddPrintLine(300, 4, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, Tray);
+                        IF KOTLineModifier."Line Printed" = KOTLineModifier."Line Printed"::Yes THEN
+                            Value[2] := '*';
+                        IF KOTLineModifier.Voided THEN
+                            Value[2] += '(-)';
 
 
+                        Value[2] += KOTLineModifier.Description;
+
+                        if Item.Get(KOTLineModifier."Item Modifier No.") then begin
+                            Value[2] += ' - ' + Item.Description;
+                        end;
+                        CASE KOTLineModifier."Line Info Type" OF
+                            KOTLineModifier."Line Info Type"::Item:
+                                Value[1] := FORMAT(KOTLineModifier.Quantity);
+                            KOTLineModifier."Line Info Type"::Text:
+                                IF KOTLineModifier.Quantity > 1 THEN
+                                    Value[1] := FORMAT(KOTLineModifier.Quantity)
+                                ELSE
+                                    Value[1] := '';
+                        END;
+                        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
+                        NodeName[1] := 'Item Description';
+                        NodeName[2] := 'Quantity';
+                        sender.AddPrintLine(350, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
+                        IF KOTLineModifier."Line Printed" <> KOTLineModifier."Line Printed"::Yes THEN BEGIN
+                            KOTLineModifier."Line Printed" := KOTLineModifier."Line Printed"::Yes;
+                            KOTLineModifier.MODIFY;
+                        END;
+                    UNTIL KOTLineModifier.NEXT = 0;
+                sender.PrintSeperator(2);
+            UNTIL KOTLineTEMP.NEXT = 0;
+
+        COMMIT;
+        Proceed := false;
+    end;
 
 
-
-
-
-                    KOTLineModifier.RESET;
-                    KOTLineModifier.SETRANGE("KOT No.", KOTLineTEMP."KOT No.");
-                    KOTLineModifier.SETRANGE("KOT Line No.", KOTLineTEMP."KOT Line No.");
-                    // KOTLineModifier.SETFILTER("Line Type", '<>%1', KOTLineModifier."Line Type"::Ingredient);  //LS-12266
-                    IF KOTLineModifier.FINDSET(TRUE, FALSE) THEN
-                        REPEAT
-
-                            //  Message(KOTLineModifier.Description);
-                            DSTR1 := '#L####### #R############################';
-                            Value[2] := '';
-                            IF KOTLineModifier."Line Printed" = KOTLineModifier."Line Printed"::Yes THEN
-                                Value[2] := '*';
-                            IF KOTLineModifier.Voided THEN
-                                Value[2] += '(-)';
-
-
-                            Value[2] += KOTLineModifier.Description;
-
-                            if Item.Get(KOTLineModifier."Item Modifier No.") then begin
-                                Value[2] += ' - ' + Item.Description;
-                            end;
-                            CASE KOTLineModifier."Line Info Type" OF
-                                KOTLineModifier."Line Info Type"::Item:
-                                    Value[1] := FORMAT(KOTLineModifier.Quantity);
-                                KOTLineModifier."Line Info Type"::Text:
-                                    IF KOTLineModifier.Quantity > 1 THEN
-                                        Value[1] := FORMAT(KOTLineModifier.Quantity)
-                                    ELSE
-                                        Value[1] := '';
-                            END;
-                            sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, FALSE, FALSE, FALSE));
-                            NodeName[1] := 'Item Description';
-                            NodeName[2] := 'Quantity';
-                            sender.AddPrintLine(350, 2, NodeName, Value, DSTR1, FALSE, FALSE, FALSE, FALSE, 2);
-                            IF KOTLineModifier."Line Printed" <> KOTLineModifier."Line Printed"::Yes THEN BEGIN
-                                KOTLineModifier."Line Printed" := KOTLineModifier."Line Printed"::Yes;
-                                KOTLineModifier.MODIFY;
-                            END;
-                        UNTIL KOTLineModifier.NEXT = 0;
-                    sender.PrintSeperator(2);
-                UNTIL KOTLineTEMP.NEXT = 0;
-
-            COMMIT;
-            Proceed := false;
-        end;
-
-    */
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Print Utility", 'OnBeforePrintHeader', '', true, true)]
     procedure OnBeforePrintHeader(Transaction: Record "Transaction Header"; PreReceipt: Boolean; Tray: Integer; PrintBuffer: Record "POS Print Buffer"; PrintBufferIndex: Integer; LinesPrinted: Integer; var Proceed: Boolean; sender: Codeunit "POS Print Utility"; Globals: Codeunit "POS Session"; UseTransactionStoreAndPOSForPrintHeader: Boolean)
     begin
@@ -832,8 +869,103 @@ POSTrans: Record "POS Transaction";
         Description: Text[200];
         POSHardwareprofile: Record "POS Hardware Profile";
         DeviceID: Code[20];
+        Customer: Record Customer;
+        // MyFatoorah Payment Variables
+        MyFatoorahClient: HttpClient;
+        MyFatoorahRequest: HttpRequestMessage;
+        MyFatoorahResponse: HttpResponseMessage;
+        MyFatoorahContent: HttpContent;
+        MyFatoorahHeaders: HttpHeaders;
+        MyFatoorahJsonText: Text;
+        MyFatoorahResponseText: Text;
+        MyFatoorahApiKey: Text;
+        MyFatoorahBaseUrl: Text;
+        MyFatoorahInvoiceId: Text;
+        MyFatoorahPaymentUrl: Text;
+        // QR Code Variables
+        MyFatoorahQRCodeRec: Record TempBlob;
+        MyFatoorahQRPath: Text;
+        BOUtils_g: Codeunit "BO Utils";
     begin
         POSTerminal.Get(POSTransaction."POS Terminal No.");
+
+        // MyFatoorah Payment Request for POSTransLine.Number = 39
+        if POSTransLine.Number = '39' then begin
+            // Initialize MyFatoorah API settings
+
+            if (POSTransaction."Customer No." <> '') then begin
+                Customer.Get(POSTransaction."Customer No.");
+            end;
+
+            MyFatoorahApiKey := 'DJW7RozD2CHswXyPRKRCD6m-ua7MIW2pHTFftWzFe0KaUX9h6Db4xEI9p9CNfghAvPQ8x8BK6cB-NLY5Y4TxJDI0nku6mLPmpHggG7ThHAzrGwLbcUVXNBohx3DFLnWufCsobUnfdczkWHvOn1X2_xhWRz1_LFi_2z9wve7Uw1JboBiUbrFuQtfnMhKkBM6-FGDu98bhVUIFdcKQJtMGqpB55OB_G2XtLEnpBdIqasBqrCprn6_iR4X-TnARCAkUvDus_GMRWNSHkH0ZVY05D0JL6B_-lVBNgKCbgXW2R4DbO75kc6AQ7BpgYH0Hx6MgZ1rqNGg_8cPvEIdrh6srVHqPQZu1hE0UV2_flWXhUQDk_C4MzcAJnv_sfEUFqxV5une1BYXC5Bg5yhXh6YBO5dab7_cLgJnkPGtz3NwL4-4YV-8_ZU4OSlBXIjWKYnIv3ZNNmHYZUFcP6FCrfJ9Mpy_F70VEM9_kiPrCshlbKeC4Y6PnTIzVIbqOg0mYiHRn9lm7P1Gdr0T1fnr56bdtjd8u8TZ0EGnydAsWrw4ffcbJ_T3HQ6xsiAe78HivM_9RaJ2-FQVgvfg89Csjug-1__6ymLEDE0gVnxJsuv3OCqFI_UxLW65QbYYhi6gzpgIJ2obARrmQpyFcFwt08VvARqrqXPYwXPPA9WC9ryYhblafTWYc'; // Replace with actual API key
+            MyFatoorahBaseUrl := 'https://api.myfatoorah.com';
+
+            // Prepare payment request JSON
+            MyFatoorahJsonText := '{"InvoiceAmount": ' + Format(PaymentAmount) +
+                                 ',"CurrencyIso": "SR"' +
+                                 ',"CustomerName": "Customer"' +
+                                 ',"CustomerEmail": "customer@example.com"' +
+                                 ',"CustomerMobile": "+96500000000"' +
+                                 ',"CustomerReference": "' + POSTransaction."Receipt No." + '"' +
+                                 ',"CustomerAddress": "Address"' +
+                                 ',"InvoiceDisplayValue": "Invoice"' +
+                                 ',"CallBackUrl": "https://your-callback-url.com"' +
+                                 ',"ErrorUrl": "https://your-error-url.com"' +
+                                 ',"Language": "en"' +
+                                 ',"ExpiryDate": "' + Format(CalcDate('<+1D>', Today)) + '"' +
+                                 ',"ApiCustomFileds": "' + POSTransaction."Receipt No." + '"' +
+                                 ',"InvoiceItems": [{' +
+                                 '"ItemName": "Payment for Receipt ' + POSTransaction."Receipt No." + '"' +
+                                 ',"Quantity": 1' +
+                                 ',"UnitPrice": ' + Format(PaymentAmount) +
+                                 '}]}';
+
+            // Set up HTTP request
+            MyFatoorahContent.WriteFrom(MyFatoorahJsonText);
+            MyFatoorahContent.GetHeaders(MyFatoorahHeaders);
+            MyFatoorahHeaders.Remove('Content-Type');
+            MyFatoorahHeaders.Add('Content-Type', 'application/json');
+            MyFatoorahHeaders.Add('Authorization', 'Bearer ' + MyFatoorahApiKey);
+
+            MyFatoorahRequest.Content(MyFatoorahContent);
+            MyFatoorahRequest.SetRequestUri(MyFatoorahBaseUrl + '/v2/SendPayment');
+            MyFatoorahRequest.Method('POST');
+
+            // Send request to MyFatoorah
+            if MyFatoorahClient.Send(MyFatoorahRequest, MyFatoorahResponse) then begin
+                MyFatoorahResponse.Content().ReadAs(MyFatoorahResponseText);
+
+                // Parse response to get payment URL
+                if MyFatoorahResponse.IsSuccessStatusCode then begin
+                    // Extract InvoiceId and PaymentURL from response
+                    // This is a simplified implementation - you may need to parse JSON properly
+                    MyFatoorahPaymentUrl := MyFatoorahResponseText;
+
+                    // Generate QR Code for the payment URL
+                    if MyFatoorahPaymentUrl <> '' then begin
+                        // Create QR Code
+                        CreateQRCode(MyFatoorahPaymentUrl, MyFatoorahQRCodeRec);
+
+                        // Display QR Code and Payment URL
+                        ShowMyFatoorahPaymentQR(MyFatoorahPaymentUrl, MyFatoorahQRCodeRec, PaymentAmount, POSTransaction."Receipt No.");
+                    end;
+
+                    // Set Proceed to false to prevent normal card processing
+                    Proceed := false;
+
+                    // You can add additional logic here to handle the payment response
+                    // For example, store the payment URL or redirect the user
+                end else begin
+                    // Handle error response
+                    Error('MyFatoorah payment request failed: %1', MyFatoorahResponseText);
+                end;
+            end else begin
+                Error('Failed to send MyFatoorah payment request');
+            end;
+
+            exit;
+        end;
+
         if not (POSTerminal."Hardware Profile" = '') then begin
 
 
@@ -1242,12 +1374,46 @@ then
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"POS Post Utility", 'OnAfterPostTransaction', '', true, true)]
     procedure OnAfterPostTransaction(var TransactionHeader_p: Record "Transaction Header")
+    var
+        Store: Record "Store";
+        Json: JsonObject;
+        JsonText: Text;
+        Content: HttpContent;
+        header: HttpHeaders;
+        Client: HttpClient;
+        RequestMessage: HttpRequestMessage;
+        ResponseMessage: HttpResponseMessage;
+
     begin
         if (CompanyName = 'Al Amer Market') then begin
             if (TransactionHeader_p."Transaction Type" = TransactionHeader_p."Transaction Type"::NegAdj) then begin
                 SendTSSlack(TransactionHeader_p, 'shop_use');
             end else if (TransactionHeader_p."Transaction Type" = TransactionHeader_p."Transaction Type"::Sales) and (TransactionHeader_p."Sale Is Return Sale") then begin
                 SendSaleTSSlack(TransactionHeader_p, 'sale_returns');
+            end;
+        end;
+
+
+        if (Store.Get(TransactionHeader_p."Store No.")) then begin
+            if (Store.Address <> '') then begin
+
+
+
+                JsonText := '{"posId": "' + TransactionHeader_p."POS Terminal No." + '", "ReceiptID":"' + TransactionHeader_p."Receipt No." + '", "rtspUrl": ""}';
+                Content.WriteFrom(JsonText);
+                Content.GetHeaders(header);
+                header.Remove('Content-Type');
+                header.Add('Content-Type', 'application/json');
+                RequestMessage.Content(Content);
+                RequestMessage.SetRequestUri('http://' + Store.Address + ':84/api/PosRecording/end');
+                RequestMessage.Method('POST');
+                Client.Send(RequestMessage, ResponseMessage);
+                ResponseMessage.Content().ReadAs(JsonText);
+                if (TransactionHeader_p."POS Terminal No." = 'P098') then begin
+                    Message(JsonText);
+                end;
+
+
             end;
         end;
 
@@ -1658,10 +1824,10 @@ then
                 if (POSHardwareProfile."HWST Sync") then begin
 
 
-                    pQRPath := AlamerUtils.getAmrBarcode(Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                    pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
                 end else begin
 
-                    pQRPath := AlamerUtils.getClientAmrBarcode(Transaction."Receipt No.", 900, 100);
+                    pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
 
                 end;
                 sender.PrintBitmap(2, pQRPath, 1);
@@ -1715,10 +1881,10 @@ then
                 end;
                 if (POSHardwareProfile."HWST Sync") then begin
 
-                    ZlQRPath := AlamerUtils.getZakatQr(Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
+                    ZlQRPath := AlamerUtils.getZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
 
                 end else begin
-                    ZlQRPath := AlamerUtils.getClientZakatQr(Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
+                    ZlQRPath := AlamerUtils.getClientZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
 
                 end;
 
@@ -5057,6 +5223,43 @@ then
 
         end;
 
+    end;
+
+    /// <summary>
+    /// Shows MyFatoorah payment QR code and payment information
+    /// </summary>
+    /// <param name="PaymentUrl">The MyFatoorah payment URL</param>
+    /// <param name="QRCodeRec">The QR code record containing the payment URL</param>
+    /// <param name="PaymentAmount">The payment amount</param>
+    /// <param name="ReceiptNo">The receipt number</param>
+    procedure ShowMyFatoorahPaymentQR(PaymentUrl: Text; var QRCodeRec: Record TempBlob; PaymentAmount: Decimal; ReceiptNo: Code[20])
+    var
+        QRCodeText: Text;
+        PaymentInfoText: Text;
+        FileMgt: Codeunit "File Management";
+        QRCodePath: Text;
+    begin
+        // Create payment information text
+        PaymentInfoText := 'Payment Amount: ' + Format(PaymentAmount) + ' KWD' + '\';
+        PaymentInfoText += 'Receipt No: ' + ReceiptNo + '\';
+        PaymentInfoText += 'Payment URL: ' + PaymentUrl;
+
+        // Export QR code to temporary file and show it
+        QRCodePath := FileMgt.BLOBExport(QRCodeRec, 'MyFatoorahPaymentQR.bmp', false);
+
+        // Show payment information and QR code
+        if Confirm('MyFatoorah Payment QR Code Generated!\' +
+                  'Amount: ' + Format(PaymentAmount) + ' KWD\' +
+                  'Receipt: ' + ReceiptNo + '\' +
+                  'Payment URL: ' + PaymentUrl + '\' +
+                  'QR Code saved to: ' + QRCodePath + '\' +
+                  'Do you want to open the payment URL?', false) then begin
+            // Open payment URL in default browser
+            Hyperlink(PaymentUrl);
+        end;
+
+        // Show QR code path for manual access
+        Message('QR Code saved to: ' + QRCodePath + '\Payment URL: ' + PaymentUrl);
     end;
 
 

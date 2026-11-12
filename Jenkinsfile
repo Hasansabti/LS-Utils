@@ -1,5 +1,5 @@
-// The .app files are built only when the commit subject line is exactly "publish" (case-insensitive).
-// Example: git commit -m "publish"
+// Every commit on the branch Jenkins watches compiles the .app files and copies them
+// into the NavWS publish folder and the live backoffice site.
 // Dependency sources:
 //   https://github.com/Hasansabti/Nav_Utils       (InvoiceUtils.dll)
 //   https://github.com/Hasansabti/AlamerUtils_AL  (AlamerUtils .app)
@@ -18,8 +18,8 @@ pipeline {
     }
 
     environment {
-        PUBLISH_FLAG_FILE = 'jenkins-do-publish-app.flag'
         DROP_PATH = 'C:\\JenkinsDeploy\\NavWS\\Published\\LS-Utils'
+        IIS_PATH = 'C:\\sites\\backoffice\\LS-Utils'
         GIT_CREDENTIALS_ID = 'github-navws'
         DEPENDENCY_CREDENTIALS_ID = 'github-alamer-repos'
     }
@@ -29,37 +29,16 @@ pipeline {
             steps {
                 checkout scm
                 powershell 'git -C $env:WORKSPACE config core.longpaths true'
-            }
-        }
-
-        stage('Publish trigger') {
-            steps {
                 script {
-                    dir(env.WORKSPACE) {
-                        if (fileExists(env.PUBLISH_FLAG_FILE)) {
-                            echo "Removing leftover ${env.PUBLISH_FLAG_FILE} from prior build."
-                            powershell "Remove-Item -LiteralPath '${env.PUBLISH_FLAG_FILE}' -Force -ErrorAction SilentlyContinue"
-                        }
-
-                        def subject = bat(returnStdout: true, script: '@git log -1 --pretty=format:%%s').trim()
-                        subject = subject.replace('\uFEFF', '').replaceAll(/[\r\n\u0000]/, '').trim()
-                        echo "Commit subject: [${subject}]"
-                        if (subject.equalsIgnoreCase('publish')) {
-                            writeFile file: env.PUBLISH_FLAG_FILE, text: 'publish'
-                            echo 'Publish requested — will build Nav_Utils, AlamerUtils, and LS Utils.'
-                        } else {
-                            currentBuild.description = 'Skipped — commit subject is not "publish"'
-                            echo 'Skipping .app (use: git commit -m "publish").'
-                        }
-                    }
+                    def subject = bat(returnStdout: true, script: '@git log -1 --pretty=format:%%s').trim()
+                    subject = subject.replace('\uFEFF', '').replaceAll(/[\r\n\u0000]/, '').trim()
+                    currentBuild.description = "Compile after commit: ${subject}"
+                    echo "Commit subject: [${subject}]"
                 }
             }
         }
 
         stage('Build .app') {
-            when {
-                expression { return fileExists("${env.PUBLISH_FLAG_FILE}") }
-            }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'github-alamer-repos',
@@ -95,22 +74,25 @@ pipeline {
                         -AlamerUtilsPath 'C:/JenkinsTools/ls-utils-deps/AlamerUtils_AL'
                     if ($LASTEXITCODE -ne 0) { throw "Build-LSUtilsApp.ps1 failed (exit $LASTEXITCODE)" }
                 '''
-                script {
-                    currentBuild.description = 'Published AlamerUtils and LS Utils .app files'
-                }
+                powershell label: 'Copy packages onto the NavWS site', script: '''
+                    $ErrorActionPreference = "Stop"
+                    if (!(Test-Path -LiteralPath $env:DROP_PATH)) { throw "Drop folder missing: $($env:DROP_PATH)" }
+                    New-Item -ItemType Directory -Force -Path $env:IIS_PATH | Out-Null
+                    & robocopy $env:DROP_PATH $env:IIS_PATH /E /R:2 /W:2
+                    $code = $LASTEXITCODE
+                    if ($code -ge 8) { throw "robocopy to $($env:IIS_PATH) failed (exit $code)" }
+                    Write-Host "Copied LS Utils packages to $($env:IIS_PATH) (robocopy $code)"
+                    exit 0
+                '''
             }
         }
     }
 
     post {
         success {
-            script {
-                if (fileExists("${env.PUBLISH_FLAG_FILE}")) {
-                    archiveArtifacts artifacts: 'artifacts/*.app', fingerprint: true
-                    archiveArtifacts artifacts: 'artifacts/InvoiceUtils.dll', fingerprint: true, allowEmptyArchive: true
-                    echo "SUCCESS: .app files archived and copied to ${env.DROP_PATH}"
-                }
-            }
+            archiveArtifacts artifacts: 'artifacts/*.app', fingerprint: true
+            archiveArtifacts artifacts: 'artifacts/InvoiceUtils.dll', fingerprint: true, allowEmptyArchive: true
+            echo "SUCCESS: .app files archived, copied to ${DROP_PATH}, and deployed to ${IIS_PATH}"
         }
         failure {
             echo 'FAILED: see the console log for AL compiler errors.'

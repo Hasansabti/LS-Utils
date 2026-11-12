@@ -36,6 +36,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# InvoiceUtils.dll references QRCoder and ZXing at runtime, so they ship with it.
+$runtimeDlls = @('InvoiceUtils.dll', 'QRCoder.dll', 'zxing.dll', 'zxing.presentation.dll')
+
 if (-not $ProjectPath) {
     $ProjectPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 }
@@ -243,14 +246,15 @@ using System.Reflection;
         throw "MSBuild failed with exit code $LASTEXITCODE"
     }
 
-    $dll = Join-Path $output 'InvoiceUtils.dll'
-    if (-not (Test-Path -LiteralPath $dll)) {
-        throw "InvoiceUtils.dll was not built: $dll"
-    }
-
     New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
-    Copy-Item -LiteralPath $dll -Destination (Join-Path $DestinationDir 'InvoiceUtils.dll') -Force
-    Write-Host "Copied InvoiceUtils.dll to $DestinationDir"
+    foreach ($name in $runtimeDlls) {
+        $src = Join-Path $output $name
+        if (-not (Test-Path -LiteralPath $src)) {
+            throw "$name was not built: $src"
+        }
+        Copy-Item -LiteralPath $src -Destination (Join-Path $DestinationDir $name) -Force
+    }
+    Write-Host "Copied $($runtimeDlls -join ', ') to $DestinationDir"
     return (Join-Path $DestinationDir 'InvoiceUtils.dll')
 }
 
@@ -269,7 +273,9 @@ $publishedApps = @()
 if ($NavUtilsPath -and $AlamerUtilsPath) {
     $navDllDir = Join-Path $AlamerUtilsPath '.netpackages'
     Build-NavUtilsDll -NavPath $NavUtilsPath -DestinationDir $navDllDir | Out-Null
-    Copy-Item -LiteralPath (Join-Path $navDllDir 'InvoiceUtils.dll') -Destination (Join-Path $artifacts 'InvoiceUtils.dll') -Force
+    foreach ($name in $runtimeDlls) {
+        Copy-Item -LiteralPath (Join-Path $navDllDir $name) -Destination (Join-Path $artifacts $name) -Force
+    }
 }
 
 if ($AlamerUtilsPath) {
@@ -311,10 +317,12 @@ foreach ($app in $publishedApps) {
     Write-Host "Published: $published"
 }
 
-$dllArtifact = Join-Path $artifacts 'InvoiceUtils.dll'
-if (Test-Path -LiteralPath $dllArtifact) {
-    Copy-Item -LiteralPath $dllArtifact -Destination (Join-Path $DropPath 'InvoiceUtils.dll') -Force
-    Write-Host "Published: $(Join-Path $DropPath 'InvoiceUtils.dll')"
+foreach ($name in $runtimeDlls) {
+    $dllArtifact = Join-Path $artifacts $name
+    if (Test-Path -LiteralPath $dllArtifact) {
+        Copy-Item -LiteralPath $dllArtifact -Destination (Join-Path $DropPath $name) -Force
+        Write-Host "Published: $(Join-Path $DropPath $name)"
+    }
 }
 
 $manifest = [ordered]@{
@@ -339,9 +347,11 @@ if ($AliasPath) {
     Copy-Item -LiteralPath $alamerApp.FullName -Destination (Join-Path $AliasPath $alamerApp.Name) -Force
     Copy-Item -LiteralPath $lsApp.FullName -Destination (Join-Path $AliasPath $lsApp.Name) -Force
     Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $AliasPath 'manifest.json') -Force
-    $dll = Join-Path $DropPath 'InvoiceUtils.dll'
-    if (Test-Path -LiteralPath $dll) {
-        Copy-Item -LiteralPath $dll -Destination (Join-Path $AliasPath 'InvoiceUtils.dll') -Force
+    foreach ($name in $runtimeDlls) {
+        $dll = Join-Path $DropPath $name
+        if (Test-Path -LiteralPath $dll) {
+            Copy-Item -LiteralPath $dll -Destination (Join-Path $AliasPath $name) -Force
+        }
     }
     Write-Host "Stable packages: $AliasPath"
 }

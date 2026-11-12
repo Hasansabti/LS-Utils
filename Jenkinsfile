@@ -99,7 +99,7 @@ pipeline {
     post {
         success {
             archiveArtifacts artifacts: 'artifacts/*.app', fingerprint: true
-            archiveArtifacts artifacts: 'artifacts/InvoiceUtils.dll', fingerprint: true, allowEmptyArchive: true
+            archiveArtifacts artifacts: 'artifacts/InvoiceUtils.dll, artifacts/QRCoder.dll, artifacts/zxing.dll, artifacts/zxing.presentation.dll', fingerprint: true, allowEmptyArchive: true
             echo "SUCCESS: .app files archived, copied to ${DROP_PATH}, and deployed to ${IIS_PATH}"
         }
         failure {

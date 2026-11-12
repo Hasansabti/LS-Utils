@@ -227,12 +227,13 @@ using System.Reflection;
         throw "nuget restore failed with exit code $LASTEXITCODE"
     }
 
-    $output = Join-Path $NavPath 'artifacts\net472'
-    if (-not $output.EndsWith('\')) { $output += '\' }
+    # Keep this path free of spaces. A trailing backslash next to a quote
+    # is eaten by the Windows command line and breaks MSBuild.
+    $output = 'C:\JenkinsTools\ls-utils-publish\net472\'
     New-Item -ItemType Directory -Force -Path $output | Out-Null
     $msbuild = Resolve-MSBuild
     Write-Host "Building InvoiceUtils.dll with $msbuild"
-    & $msbuild $project /t:Build /p:Configuration=Release "/p:OutputPath=$output" /p:DebugType=none /v:m /nologo | Out-Host
+    & $msbuild $project /t:Build "/p:Configuration=Release" "/p:OutputPath=$output." /p:DebugType=none /v:m /nologo | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "MSBuild failed with exit code $LASTEXITCODE"
     }

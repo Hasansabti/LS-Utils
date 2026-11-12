@@ -19,7 +19,9 @@ pipeline {
 
     environment {
         DROP_PATH = 'C:\\JenkinsDeploy\\NavWS\\Published\\LS-Utils'
+        ALIAS_PATH = 'C:\\JenkinsDeploy\\NavWS\\Published\\ABO\\LS-Utils'
         IIS_PATH = 'C:\\sites\\backoffice\\LS-Utils'
+        IIS_ALIAS_PATH = 'C:\\sites\\backoffice\\ABO\\LS-Utils'
         GIT_CREDENTIALS_ID = 'github-navws'
         DEPENDENCY_CREDENTIALS_ID = 'github-alamer-repos'
     }
@@ -70,6 +72,7 @@ pipeline {
                     if (Test-Path $leftover) { Remove-Item -LiteralPath $leftover -Recurse -Force }
                     & (Join-Path $env:WORKSPACE "Scripts\\jenkins\\Build-LSUtilsApp.ps1") `
                         -DropPath $env:DROP_PATH `
+                        -AliasPath $env:ALIAS_PATH `
                         -NavUtilsPath 'C:/JenkinsTools/ls-utils-deps/Nav_Utils' `
                         -AlamerUtilsPath 'C:/JenkinsTools/ls-utils-deps/AlamerUtils_AL'
                     if ($LASTEXITCODE -ne 0) { throw "Build-LSUtilsApp.ps1 failed (exit $LASTEXITCODE)" }
@@ -77,11 +80,16 @@ pipeline {
                 powershell label: 'Copy packages onto the NavWS site', script: '''
                     $ErrorActionPreference = "Stop"
                     if (!(Test-Path -LiteralPath $env:DROP_PATH)) { throw "Drop folder missing: $($env:DROP_PATH)" }
-                    New-Item -ItemType Directory -Force -Path $env:IIS_PATH | Out-Null
-                    & robocopy $env:DROP_PATH $env:IIS_PATH /E /R:2 /W:2
-                    $code = $LASTEXITCODE
-                    if ($code -ge 8) { throw "robocopy to $($env:IIS_PATH) failed (exit $code)" }
-                    Write-Host "Copied LS Utils packages to $($env:IIS_PATH) (robocopy $code)"
+                    function Copy-Tree($Source, $Dest) {
+                        if (!(Test-Path -LiteralPath $Source)) { throw "Missing package folder: $Source" }
+                        New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+                        & robocopy $Source $Dest /E /R:2 /W:2
+                        $code = $LASTEXITCODE
+                        if ($code -ge 8) { throw "robocopy to $Dest failed (exit $code)" }
+                        Write-Host "Copied $Source to $Dest (robocopy $code)"
+                    }
+                    Copy-Tree $env:DROP_PATH $env:IIS_PATH
+                    Copy-Tree $env:ALIAS_PATH $env:IIS_ALIAS_PATH
                     exit 0
                 '''
             }

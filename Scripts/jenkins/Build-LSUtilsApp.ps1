@@ -19,13 +19,18 @@
 
 .PARAMETER NavUtilsPath
     Checkout of https://github.com/Hasansabti/Nav_Utils
+
+.PARAMETER AliasPath
+    Optional folder that receives stable download names (AlamerUtils.app and LSUtils.app)
+    for the Store Control and Till Setup pages.
 #>
 [CmdletBinding()]
 param(
     [string]$ProjectPath,
     [string]$DropPath = 'C:\JenkinsDeploy\NavWS\Published\LS-Utils',
     [string]$AlamerUtilsPath,
-    [string]$NavUtilsPath
+    [string]$NavUtilsPath,
+    [string]$AliasPath
 )
 
 Set-StrictMode -Version Latest
@@ -321,3 +326,22 @@ $manifest = [ordered]@{
 $manifestPath = Join-Path $DropPath 'manifest.json'
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 Write-Host "Manifest: $manifestPath"
+
+if ($AliasPath) {
+    New-Item -ItemType Directory -Force -Path $AliasPath | Out-Null
+    $alamerApp = Get-ChildItem -LiteralPath $DropPath -Filter '*AlamerUtils*.app' | Select-Object -First 1
+    $lsApp = Get-ChildItem -LiteralPath $DropPath -Filter '*ALProject4*.app' | Select-Object -First 1
+    if (-not $alamerApp -or -not $lsApp) {
+        throw "Could not find AlamerUtils and LS Utils .app files in $DropPath"
+    }
+    Copy-Item -LiteralPath $alamerApp.FullName -Destination (Join-Path $AliasPath 'AlamerUtils.app') -Force
+    Copy-Item -LiteralPath $lsApp.FullName -Destination (Join-Path $AliasPath 'LSUtils.app') -Force
+    Copy-Item -LiteralPath $alamerApp.FullName -Destination (Join-Path $AliasPath $alamerApp.Name) -Force
+    Copy-Item -LiteralPath $lsApp.FullName -Destination (Join-Path $AliasPath $lsApp.Name) -Force
+    Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $AliasPath 'manifest.json') -Force
+    $dll = Join-Path $DropPath 'InvoiceUtils.dll'
+    if (Test-Path -LiteralPath $dll) {
+        Copy-Item -LiteralPath $dll -Destination (Join-Path $AliasPath 'InvoiceUtils.dll') -Force
+    }
+    Write-Host "Stable packages: $AliasPath"
+}

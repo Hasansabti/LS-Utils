@@ -390,10 +390,10 @@ POSTrans: Record "POS Transaction";
             if (POSHardwareProfile."HWST Sync") then begin
 
 
-                pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                pQRPath := AlamerUtils.getAmrBarcode(Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
             end else begin
 
-                pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
+                pQRPath := AlamerUtils.getClientAmrBarcode(Transaction."Receipt No.", 900, 100);
 
             end;
 
@@ -889,8 +889,13 @@ POSTrans: Record "POS Transaction";
     begin
         POSTerminal.Get(POSTransaction."POS Terminal No.");
 
+        if (POSTerminal."No." = 'S098') then begin
+            Message(FORMAT(PaymentAmount));
+        end;
+
         // MyFatoorah Payment Request for POSTransLine.Number = 39
-        if POSTransLine.Number = '39' then begin
+        /*
+        if POSTransaction."POS Terminal No." = 'R98' then begin
             // Initialize MyFatoorah API settings
 
             if (POSTransaction."Customer No." <> '') then begin
@@ -925,11 +930,14 @@ POSTrans: Record "POS Transaction";
             MyFatoorahContent.GetHeaders(MyFatoorahHeaders);
             MyFatoorahHeaders.Remove('Content-Type');
             MyFatoorahHeaders.Add('Content-Type', 'application/json');
-            MyFatoorahHeaders.Add('Authorization', 'Bearer ' + MyFatoorahApiKey);
 
             MyFatoorahRequest.Content(MyFatoorahContent);
             MyFatoorahRequest.SetRequestUri(MyFatoorahBaseUrl + '/v2/SendPayment');
             MyFatoorahRequest.Method('POST');
+
+            // Add authorization header to the request
+            MyFatoorahRequest.GetHeaders(MyFatoorahHeaders);
+            MyFatoorahHeaders.Add('Authorization', 'Bearer ' + MyFatoorahApiKey);
 
             // Send request to MyFatoorah
             if MyFatoorahClient.Send(MyFatoorahRequest, MyFatoorahResponse) then begin
@@ -945,9 +953,10 @@ POSTrans: Record "POS Transaction";
                     if MyFatoorahPaymentUrl <> '' then begin
                         // Create QR Code
                         CreateQRCode(MyFatoorahPaymentUrl, MyFatoorahQRCodeRec);
+                        Message(MyFatoorahPaymentUrl);
 
                         // Display QR Code and Payment URL
-                        ShowMyFatoorahPaymentQR(MyFatoorahPaymentUrl, MyFatoorahQRCodeRec, PaymentAmount, POSTransaction."Receipt No.");
+                        ShowMyFatoorahPaymentQR(MyFatoorahPaymentUrl, MyFatoorah PaymentAmount, POSTransaction."Receipt No.");
                     end;
 
                     // Set Proceed to false to prevent normal card processing
@@ -965,7 +974,7 @@ POSTrans: Record "POS Transaction";
 
             exit;
         end;
-
+*/
         if not (POSTerminal."Hardware Profile" = '') then begin
 
 
@@ -1824,10 +1833,10 @@ then
                 if (POSHardwareProfile."HWST Sync") then begin
 
 
-                    pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                    pQRPath := AlamerUtils.getAmrBarcode(Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
                 end else begin
 
-                    pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
+                    pQRPath := AlamerUtils.getClientAmrBarcode(Transaction."Receipt No.", 900, 100);
 
                 end;
                 sender.PrintBitmap(2, pQRPath, 1);
@@ -1881,16 +1890,16 @@ then
                 end;
                 if (POSHardwareProfile."HWST Sync") then begin
 
-                    ZlQRPath := AlamerUtils.getZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
+                    ZlQRPath := AlamerUtils.getZakatQr(Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
 
                 end else begin
-                    ZlQRPath := AlamerUtils.getClientZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
+                    ZlQRPath := AlamerUtils.getClientZakatQr(Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
 
                 end;
 
 
 
-                // ZlQRPath := FileMgt.BLOBExport(ZQRCodeRec, 'QrBmpExp.bmp', FALSE);
+                // ZlQRPath := FileMgt.BLOBExport(Z 'QrBmpExp.bmp', FALSE);
                 //  Message(ZlQRPath);
 
                 //  QRPath := FileMgt.DownloadTempFile(ZlQRPath);
@@ -1906,21 +1915,118 @@ then
             IF Transaction."Post as Shipment" THEN
                 sender.PrintSignature('');
 
+            // Print coupon within the SAME receipt (same flow as barcode: PrintBitmap + Seperator).
+            // Only on the original receipt (not on COPY reprints).
 
 
             IF NOT sender.ClosePrinter(2) THEN
                 EXIT(FALSE);
 
-
             bSecondPrintActive := FALSE;
             Transaction.IncPrintedCounter(1);
             COMMIT;
 
+
+            if Transaction.GetPrintedCounter(1) = 0 then
+                PrintSmarvyCouponIfEligible(Transaction, sender);
             //  SLEEP(2000);//EDM
             GenerateOneCardVoucher(Transaction, sender);//EDM
             EXIT(TRUE);
 
         END;
+    end;
+
+    local procedure PrintSmarvyCouponIfEligible(Transaction: Record "Transaction Header"; sender: Codeunit "POS Print Utility")
+    var
+        CouponClientFilePath: Text;
+        GrossAmount: Decimal;
+        POSText: Record 99001492;
+        SmarvyCouponCode: Record "Smarvy Coupon Code";
+    begin
+        // In LS POS, sales "Gross Amount" is often stored negative, so use absolute value.
+        GrossAmount := Abs(Transaction."Gross Amount");
+
+        if Transaction."Sale Is Return Sale" then
+            exit;
+
+        if GrossAmount <= 999 then
+            exit;
+
+        if not AssignSmarvyCouponCode(SmarvyCouponCode, Transaction) then
+            exit;
+
+        sender.PrintHeader(Transaction, FALSE, 2);
+
+        PrintSeperator(2, sender);
+
+        DSTR1 := '#C###################';
+        Value[1] := 'كوبون سمارفي - Smarty Spot';
+        NodeName[1] := 'SmarvyTitle';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), TRUE, TRUE, TRUE, FALSE));
+        sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, TRUE, TRUE, TRUE, FALSE, 2);
+
+        DSTR1 := '#C###################';
+        Value[1] := '100 رصيد ألعاب';
+        NodeName[1] := 'SmarvyBenefit';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), POSText.Wide, POSText.Bold, POSText.High, FALSE));
+        sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, POSText.Wide, POSText.Bold, POSText.High, FALSE, 2);
+
+        PrintSeperator(2, sender);
+
+        DSTR1 := '#L###### #T###### #T###';
+        Value[1] := 'التاريخ:';
+        Value[2] := Format(Transaction.Date);
+        Value[3] := Format(Transaction.Time, 5);
+        NodeName[1] := 'SmarvyDate';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), FALSE, TRUE, FALSE, FALSE));
+        sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, FALSE, TRUE, FALSE, FALSE, 2);
+
+
+        PrintSeperator(2, sender);
+
+        DSTR1 := '#C###################';
+        Value[1] := 'صالحة لغاية 16/9/2026';
+        NodeName[1] := 'SmarvyExpiry';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), POSText.Wide, POSText.Bold, POSText.High, POSText.Italic));
+        sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, POSText.Wide, POSText.Bold, POSText.High, POSText.Italic, 2);
+
+        CouponClientFilePath := 'c:\Logo\smarvycoupon.png';
+        sender.PrintBitmap(2, CouponClientFilePath, 1);
+
+        PrintSeperator(2, sender);
+
+        DSTR1 := '#C###################';
+        Value[1] := 'رمز الكوبون';
+        NodeName[1] := 'SmarvyCodeLabel';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), TRUE, TRUE, FALSE, FALSE));
+        sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, TRUE, TRUE, FALSE, FALSE, 2);
+
+        DSTR1 := '#C###################';
+        Value[1] := SmarvyCouponCode.Code;
+        NodeName[1] := 'SmarvyCode';
+        sender.PrintLine(2, sender.FormatLine(sender.FormatStr(Value, DSTR1), TRUE, TRUE, TRUE, FALSE));
+        sender.AddPrintLine(200, 1, NodeName, Value, DSTR1, TRUE, TRUE, TRUE, FALSE, 2);
+
+        PrintSeperator(2, sender);
+    end;
+
+    local procedure AssignSmarvyCouponCode(var SmarvyCouponCode: Record "Smarvy Coupon Code"; Transaction: Record "Transaction Header"): Boolean
+    begin
+        SmarvyCouponCode.LockTable();
+        SmarvyCouponCode.SetCurrentKey(Used, "Entry No.");
+        SmarvyCouponCode.SetRange(Used, false);
+        if not SmarvyCouponCode.FindFirst() then
+            exit(false);
+
+        SmarvyCouponCode.Used := true;
+        SmarvyCouponCode."Used Date" := Today;
+        SmarvyCouponCode."Store No." := Transaction."Store No.";
+        SmarvyCouponCode."POS Terminal No." := Transaction."POS Terminal No.";
+        SmarvyCouponCode."Transaction No." := Transaction."Transaction No.";
+        SmarvyCouponCode."Receipt No." := Transaction."Receipt No.";
+        SmarvyCouponCode.Modify(true);
+
+        exit(true);
     end;
 
     procedure printVendorTotals(Transaction: Record "Transaction Header"; var sender: Codeunit "POS Print Utility"; Tray: Integer)
@@ -5232,35 +5338,7 @@ then
     /// <param name="QRCodeRec">The QR code record containing the payment URL</param>
     /// <param name="PaymentAmount">The payment amount</param>
     /// <param name="ReceiptNo">The receipt number</param>
-    procedure ShowMyFatoorahPaymentQR(PaymentUrl: Text; var QRCodeRec: Record TempBlob; PaymentAmount: Decimal; ReceiptNo: Code[20])
-    var
-        QRCodeText: Text;
-        PaymentInfoText: Text;
-        FileMgt: Codeunit "File Management";
-        QRCodePath: Text;
-    begin
-        // Create payment information text
-        PaymentInfoText := 'Payment Amount: ' + Format(PaymentAmount) + ' KWD' + '\';
-        PaymentInfoText += 'Receipt No: ' + ReceiptNo + '\';
-        PaymentInfoText += 'Payment URL: ' + PaymentUrl;
 
-        // Export QR code to temporary file and show it
-        QRCodePath := FileMgt.BLOBExport(QRCodeRec, 'MyFatoorahPaymentQR.bmp', false);
-
-        // Show payment information and QR code
-        if Confirm('MyFatoorah Payment QR Code Generated!\' +
-                  'Amount: ' + Format(PaymentAmount) + ' KWD\' +
-                  'Receipt: ' + ReceiptNo + '\' +
-                  'Payment URL: ' + PaymentUrl + '\' +
-                  'QR Code saved to: ' + QRCodePath + '\' +
-                  'Do you want to open the payment URL?', false) then begin
-            // Open payment URL in default browser
-            Hyperlink(PaymentUrl);
-        end;
-
-        // Show QR code path for manual access
-        Message('QR Code saved to: ' + QRCodePath + '\Payment URL: ' + PaymentUrl);
-    end;
 
 
 

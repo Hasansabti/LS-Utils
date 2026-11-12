@@ -1,0 +1,9 @@
+{
+  "ServerInstance": "BC140",
+  "Tenant": "default",
+  "SourcePath": "\\\\YOUR-BUILD-SERVER\\ALDeploy\\ALProject4",
+  "PollIntervalMinutes": 10,
+  "SkipVerification": true,
+  "ForceSync": true,
+  "LogPath": "C:\\ALDeploy\\ALProject4\\logs"
+}

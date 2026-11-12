@@ -390,10 +390,10 @@ POSTrans: Record "POS Transaction";
             if (POSHardwareProfile."HWST Sync") then begin
 
 
-                pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                pQRPath := AlamerUtils.getAmrBarcode(Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
             end else begin
 
-                pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
+                pQRPath := AlamerUtils.getClientAmrBarcode(Transaction."Receipt No.", 900, 100);
 
             end;
 
@@ -1833,10 +1833,10 @@ then
                 if (POSHardwareProfile."HWST Sync") then begin
 
 
-                    pQRPath := AlamerUtils.getAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
+                    pQRPath := AlamerUtils.getAmrBarcode(Transaction."Receipt No.", 900, 100, POSHardwareProfile."HWST Host" + ':8094');
                 end else begin
 
-                    pQRPath := AlamerUtils.getClientAmrBarcode(QRCodeRec, Transaction."Receipt No.", 900, 100);
+                    pQRPath := AlamerUtils.getClientAmrBarcode(Transaction."Receipt No.", 900, 100);
 
                 end;
                 sender.PrintBitmap(2, pQRPath, 1);
@@ -1890,10 +1890,10 @@ then
                 end;
                 if (POSHardwareProfile."HWST Sync") then begin
 
-                    ZlQRPath := AlamerUtils.getZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
+                    ZlQRPath := AlamerUtils.getZakatQr(Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount, POSHardwareProfile."HWST Host" + ':8094');
 
                 end else begin
-                    ZlQRPath := AlamerUtils.getClientZakatQr(QRCodeRec, Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
+                    ZlQRPath := AlamerUtils.getClientZakatQr(Transaction.Date, Transaction.Time, gCompanyInfo."Name 2", gCompanyInfo."VAT Registration No.", grossamnt, gVATAmount);
 
                 end;
 

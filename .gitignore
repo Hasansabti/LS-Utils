@@ -1,2 +1,3 @@
 artifacts/
+deps/
 jenkins-do-publish-app.flag

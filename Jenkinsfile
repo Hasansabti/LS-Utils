@@ -72,7 +72,9 @@ pipeline {
                         $env:GIT_TERMINAL_PROMPT = "0"
                         $env:GCM_INTERACTIVE = "Never"
                         function Get-Dependency($Name) {
-                            $dest = Join-Path $env:WORKSPACE "deps\\$Name"
+                            # Keep dependency sources outside the LS Utils project.
+                            # alc compiles every .al file under the project directory.
+                            $dest = Join-Path "C:\JenkinsTools\ls-utils-deps" $Name
                             if (Test-Path $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
                             New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
                             git -c credential.helper= -c "http.extraheader=AUTHORIZATION: Basic $basic" clone --depth 1 --branch master "https://github.com/Hasansabti/$Name.git" $dest
@@ -85,10 +87,12 @@ pipeline {
                 }
                 powershell label: 'Compile dependency library and AL extensions', script: '''
                     $ErrorActionPreference = "Stop"
+                    $leftover = Join-Path $env:WORKSPACE "deps"
+                    if (Test-Path $leftover) { Remove-Item -LiteralPath $leftover -Recurse -Force }
                     & (Join-Path $env:WORKSPACE "Scripts\\jenkins\\Build-LSUtilsApp.ps1") `
                         -DropPath $env:DROP_PATH `
-                        -NavUtilsPath (Join-Path $env:WORKSPACE "deps\\Nav_Utils") `
-                        -AlamerUtilsPath (Join-Path $env:WORKSPACE "deps\\AlamerUtils_AL")
+                        -NavUtilsPath "C:\JenkinsTools\ls-utils-deps\Nav_Utils" `
+                        -AlamerUtilsPath "C:\JenkinsTools\ls-utils-deps\AlamerUtils_AL"
                     if ($LASTEXITCODE -ne 0) { throw "Build-LSUtilsApp.ps1 failed (exit $LASTEXITCODE)" }
                 '''
                 script {
